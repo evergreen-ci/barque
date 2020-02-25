@@ -20,7 +20,6 @@ type userAPIKeyResponse struct {
 
 func (s *Service) fetchUserToken(rw http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	defer r.Body.Close()
 	creds := &userCredentials{}
 	if err := gimlet.GetJSON(r.Body, creds); err != nil {
 		gimlet.WriteResponse(rw, gimlet.MakeJSONErrorResponder(errors.Wrap(err, "problem reading request body")))
