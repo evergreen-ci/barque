@@ -65,13 +65,12 @@ func (s *Service) fetchUserToken(rw http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	key, err = dbuser.SetAPIKey(ctx, s.Environment)
-	if err != nil {
+	if err = dbuser.Save(ctx, s.Environment); err != nil {
 		gimlet.WriteResponse(rw, gimlet.MakeJSONInternalErrorResponder(errors.Wrap(err, "problem generating key")))
 		return
 	}
-
-	if err = dbuser.Save(ctx, s.Environment); err != nil {
+	key, err = dbuser.SetAPIKey(ctx, s.Environment)
+	if err != nil {
 		gimlet.WriteResponse(rw, gimlet.MakeJSONInternalErrorResponder(errors.Wrap(err, "problem generating key")))
 		return
 	}
