@@ -81,7 +81,7 @@ func (u *User) Save(ctx context.Context, env barque.Environment) error {
 		return errors.Wrapf(err, "problem saving user document %s", u.Username())
 	}
 
-	if res.UpsertedCount+res.ModifiedCount != 1 {
+	if res.ModifiedCount != 0 {
 		return errors.Errorf("no user document saved or modified for %s", u.Username())
 	}
 
@@ -104,7 +104,9 @@ func (u *User) SetAPIKey(ctx context.Context, env barque.Environment) (string, e
 	k := utility.RandomString()
 
 	res, err := env.DB().Collection(userCollection).UpdateOne(ctx, u.idQuery(), bson.M{
-		dbUserAPIKeyKey: k,
+		"$set": bson.M{
+			dbUserAPIKeyKey: k,
+		},
 	})
 	if err != nil {
 		return "", errors.WithStack(err)
