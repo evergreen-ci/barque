@@ -173,7 +173,11 @@ vendor-clean:
 	rm -rf vendor/github.com/mongodb/jasper/vendor/github.com/stretchr/
 	rm -rf vendor/github.com/rs/cors/examples/
 	rm -rf vendor/github.com/rs/cors/wrapper
-	rm -rf vendor/github.com/stretchr/testify/vendor/
+	rm -rf vendor/github.com/mholt/archiver/rar.go
+	rm -rf vendor/github.com/mholt/archiver/tarbz2.go
+	rm -rf vendor/github.com/mholt/archiver/tarlz4.go
+	rm -rf vendor/github.com/mholt/archiver/tarsz.go
+	rm -rf vendor/github.com/mholt/archiver/tarxz.go
 	rm -rf vendor/go.mongodb.org/mongo-driver/data/
 	rm -rf vendor/go.mongodb.org/mongo-driver/vendor/github.com/davecgh/go-spew/
 	rm -rf vendor/go.mongodb.org/mongo-driver/vendor/github.com/stretchr/
