@@ -24,7 +24,7 @@ imports:
 - name: github.com/urfave/cli
   version: 01857ac33766ce0c93856370626f9799281c14f4
 - name: github.com/mongodb/curator
-  version: 9fee6c2020c3d85bbe8fffa03e1d0e224c9652f5
+  version: 1bf23dbda88ac68ca9acea1e7e30ed4ba51677ae
 - name: github.com/mholt/archiver
   version: e4ef56d48eb029648b0e895bb0b6a393ef0829c3
 - name: github.com/aws/aws-sdk-go
@@ -43,3 +43,5 @@ imports:
   version: 60f23985327354fe2d4dde32ba05598bb047a114
 - name: github.com/PuerkitoBio/rehttp
   version: 11cf6ea5d3e9afda34846e1db511aa218049471c
+- name: github.com/google/uuid
+  version: c2e93f3ae59f2904160ceaab466009f965df46d6
