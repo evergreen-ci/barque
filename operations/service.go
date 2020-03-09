@@ -132,7 +132,7 @@ func startWebServer() cli.Command {
 				}
 			}
 			if !c.Bool(disableBackgroundJobCreation) {
-				if err := units.StartCrons(ctx, env); err != nil {
+				if err = units.StartCrons(ctx, env); err != nil {
 					return errors.Wrap(err, "failed to start crons")
 				}
 			}

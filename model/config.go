@@ -32,7 +32,7 @@ func FindConfiguration(ctx context.Context, env barque.Environment) (*Configurat
 	res := env.DB().Collection(configCollection).FindOne(ctx, bson.M{"_id": configID})
 
 	if err := res.Decode(conf); err == mongo.ErrNoDocuments {
-		if err := conf.Save(ctx, env); err != nil {
+		if err = conf.Save(ctx, env); err != nil {
 			return nil, errors.Wrap(err, "problem saving new config")
 		}
 		return conf, nil
