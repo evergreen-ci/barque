@@ -24,4 +24,24 @@ imports:
 - name: github.com/urfave/cli
   version: 01857ac33766ce0c93856370626f9799281c14f4
 - name: github.com/mongodb/curator
-  version: 9fee6c2020c3d85bbe8fffa03e1d0e224c9652f5
+  version: 1bf23dbda88ac68ca9acea1e7e30ed4ba51677ae
+- name: github.com/mholt/archiver
+  version: e4ef56d48eb029648b0e895bb0b6a393ef0829c3
+- name: github.com/aws/aws-sdk-go
+  version: cf66c348f82c79de333bd788d4f782c4d623ebad
+- name: github.com/evergreen-ci/utility
+  version: 29e693dadcd3a5df21206a8fbdecf061b726d008
+- name: github.com/stretchr/testify
+  version: 890a5c3458b43e6104ff5da8dfa139d013d77544
+- name: github.com/tychoish/bond
+  version: cbb37912b9cc70a8ccd7c4c77df3ce6bc8a62b64
+- name: golang.org/x/net
+  version: 3a22650c66bd7f4fb6d1e8072ffd7b75c8a27898
+- name: golang.org/x/text
+  version: 905a57155faa8230500121607930ebb9dd8e139c
+- name: gopkg.in/mgo.v2
+  version: 60f23985327354fe2d4dde32ba05598bb047a114
+- name: github.com/PuerkitoBio/rehttp
+  version: 11cf6ea5d3e9afda34846e1db511aa218049471c
+- name: github.com/google/uuid
+  version: c2e93f3ae59f2904160ceaab466009f965df46d6

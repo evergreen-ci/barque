@@ -17,6 +17,7 @@ import (
 
 	"github.com/evergreen-ci/pail"
 	"github.com/evergreen-ci/utility"
+	"github.com/google/uuid"
 	"github.com/mholt/archiver"
 	"github.com/mongodb/amboy"
 	"github.com/mongodb/amboy/dependency"
@@ -89,7 +90,7 @@ func NewBuildRepoJob(conf *RepositoryConfig, distro *RepositoryDefinition, versi
 		Arch:          arch,
 		AWSProfile:    profile,
 		Packages:      pkgs,
-		JobID:         fmt.Sprint(job.GetNumber()),
+		JobID:         uuid.New().String(),
 	})
 }
 
@@ -182,6 +183,7 @@ func (j *repoBuilderJob) setup() {
 
 	if j.Distro == nil {
 		j.AddError(errors.New("invalid job definition, missing distro"))
+		return
 	}
 
 	if j.Distro.Type == DEB {
@@ -469,7 +471,7 @@ func (j *repoBuilderJob) processPackages(ctx context.Context) error {
 		defer func() { catcher.Add(resp.Body.Close()) }()
 		file, err := os.Create(localPath)
 		if err != nil {
-			catcher.Add(err)
+			catcher.Add(errors.Wrapf(err, "failed to create local path '%s'", localPath))
 			break
 		}
 		_, err = io.Copy(file, resp.Body)
@@ -506,7 +508,7 @@ func (j *repoBuilderJob) processPackages(ctx context.Context) error {
 			catcher.Errorf("could not expand archive for %s", localPath)
 		}
 
-		catcher.Add(filepath.Walk(filepath.Base(localPath), func(path string, info os.FileInfo, err error) error {
+		catcher.Add(filepath.Walk(localPath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
@@ -520,7 +522,7 @@ func (j *repoBuilderJob) processPackages(ctx context.Context) error {
 		}))
 	}
 
-	catcher.Add(os.Remove(j.tmpdir))
+	catcher.Add(os.RemoveAll(j.tmpdir))
 
 	grip.Info(message.Fields{
 		"message":    "processed paths",

@@ -37,7 +37,7 @@ func (j *debRepoBuilder) createArchDirs(basePath string) error {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			err = os.MkdirAll(path, 0755)
 			if err != nil {
-				catcher.Add(err)
+				catcher.Add(errors.Wrapf(err, "failed to make dir '%s'", path))
 				continue
 			}
 
@@ -112,7 +112,7 @@ func (j *debRepoBuilder) rebuildRepo(workingDir string) error {
 		"path":      cmd.Dir,
 		"cmd":       strings.Join(cmd.Args, " "),
 	})
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return errors.Wrapf(err, "building 'Packages': [%s]", string(out))
 	}
@@ -166,7 +166,7 @@ func (j *debRepoBuilder) rebuildRepo(workingDir string) error {
 	// from the template above.
 	cmd = exec.Command("apt-ftparchive", "release", "../")
 	cmd.Dir = workingDir
-	out, err = cmd.Output()
+	out, err = cmd.CombinedOutput()
 
 	grip.Info(message.Fields{
 		"job_id":    j.ID(),
