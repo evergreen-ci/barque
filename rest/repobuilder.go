@@ -56,6 +56,7 @@ func (s *Service) addRepobuilderJob(rw http.ResponseWriter, r *http.Request) {
 	opts.AWSSecret = bucketConfig.Secret
 	opts.AWSToken = bucketConfig.Token
 	opts.Configuration.WorkSpace = conf.Repobuilder.Path
+	opts.Configuration.TempSpace = conf.Repobuilder.Temp
 
 	job, err := repobuilder.NewRepoBuilderJob(opts)
 	if err != nil {

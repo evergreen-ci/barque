@@ -142,6 +142,7 @@ var (
 
 type RepobuilderConfig struct {
 	Path    string         `bson:"path" json:"path" yaml:"path"`
+	Temp    string         `bson:"temp" json:"temp" yaml:"temp"`
 	Buckets []BucketConfig `bson:"buckets,omitempty" json:"buckets" yaml:"buckets"`
 }
 
