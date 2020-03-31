@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"time"
 
 	"github.com/evergreen-ci/barque"
 	"github.com/mongodb/anser/bsonutil"
@@ -141,14 +142,17 @@ var (
 )
 
 type RepobuilderConfig struct {
-	Path    string         `bson:"path" json:"path" yaml:"path"`
-	Temp    string         `bson:"temp" json:"temp" yaml:"temp"`
-	Buckets []BucketConfig `bson:"buckets,omitempty" json:"buckets" yaml:"buckets"`
+	Path        string         `bson:"path" json:"path" yaml:"path"`
+	Temp        string         `bson:"temp" json:"temp" yaml:"temp"`
+	Buckets     []BucketConfig `bson:"buckets,omitempty" json:"buckets" yaml:"buckets"`
+	MaxDuration time.Duration  `bson:"max_duration" json:"max_duration" yaml:"max_duration"`
 }
 
 var (
-	repoBuilderConfPathKey    = bsonutil.MustHaveTag(RepobuilderConfig{}, "Path")
-	repoBuilderConfBucketsKey = bsonutil.MustHaveTag(RepobuilderConfig{}, "Buckets")
+	repoBuilderConfPathKey        = bsonutil.MustHaveTag(RepobuilderConfig{}, "Path")
+	repoBuilderConfBucketsKey     = bsonutil.MustHaveTag(RepobuilderConfig{}, "Buckets")
+	repoBuilderConfTempKey        = bsonutil.MustHaveTag(RepobuilderConfig{}, "Temp")
+	repoBuilderConfMaxDurationKey = bsonutil.MustHaveTag(RepobuilderConfig{}, "MaxDuration")
 )
 
 func (c *RepobuilderConfig) GetBucketConfig(name string) (*BucketConfig, error) {
@@ -159,6 +163,14 @@ func (c *RepobuilderConfig) GetBucketConfig(name string) (*BucketConfig, error) 
 	}
 
 	return nil, errors.Errorf("could not find bucket configuration matching '%s'", name)
+}
+
+func (c *RepobuilderConfig) GetMaxDuration() time.Duration {
+	if c.MaxDuration > time.Minute {
+		return c.MaxDuration
+	}
+
+	return 3 * time.Hour
 }
 
 type BucketConfig struct {

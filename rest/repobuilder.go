@@ -3,6 +3,7 @@ package rest
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/evergreen-ci/barque/model"
 	"github.com/evergreen-ci/gimlet"
@@ -66,6 +67,11 @@ func (s *Service) addRepobuilderJob(rw http.ResponseWriter, r *http.Request) {
 		}))
 		return
 	}
+
+	ti := job.TimeInfo()
+	ti.DispatchBy = time.Now().Add(conf.Repobuilder.GetMaxDuration())
+	ti.MaxTime = conf.Repobuilder.GetMaxDuration()
+	job.UpdateTimeInfo(ti)
 
 	if err = s.Environment.RemoteQueue().Put(ctx, job); err != nil {
 		gimlet.WriteResponse(rw, gimlet.MakeJSONErrorResponder(gimlet.ErrorResponse{
