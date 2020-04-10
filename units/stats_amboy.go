@@ -9,8 +9,8 @@ import (
 	"github.com/mongodb/amboy"
 	"github.com/mongodb/amboy/dependency"
 	"github.com/mongodb/amboy/job"
+	"github.com/mongodb/amboy/management"
 	"github.com/mongodb/amboy/registry"
-	"github.com/mongodb/amboy/reporting"
 	"github.com/mongodb/grip"
 	"github.com/mongodb/grip/message"
 	"github.com/pkg/errors"
@@ -98,7 +98,7 @@ func (j *amboyStatsCollector) Run(ctx context.Context) {
 }
 
 func (j *amboyStatsCollector) collectExtendedRemoteStats(ctx context.Context) error {
-	reporter := j.env.RemoteReporter()
+	reporter := j.env.RemoteManager()
 	if reporter == nil {
 		return errors.New("reporter is not defined")
 	}
@@ -107,23 +107,23 @@ func (j *amboyStatsCollector) collectExtendedRemoteStats(ctx context.Context) er
 		"message": "amboy remote queue report",
 	}
 
-	pending, err := reporter.JobStatus(ctx, reporting.Pending)
+	pending, err := reporter.JobStatus(ctx, management.Pending)
 	j.AddError(err)
 	if pending != nil {
 		r["pending"] = pending
 	}
-	inprog, err := reporter.JobStatus(ctx, reporting.InProgress)
+	inprog, err := reporter.JobStatus(ctx, management.InProgress)
 	j.AddError(err)
 	if inprog != nil {
 		r["inprog"] = inprog
 	}
-	stale, err := reporter.JobStatus(ctx, reporting.Stale)
+	stale, err := reporter.JobStatus(ctx, management.Stale)
 	j.AddError(err)
 	if stale != nil {
 		r["stale"] = stale
 	}
 
-	recentErrors, err := reporter.RecentErrors(ctx, time.Minute, reporting.StatsOnly)
+	recentErrors, err := reporter.RecentErrors(ctx, time.Minute, management.StatsOnly)
 	j.AddError(err)
 	if recentErrors != nil {
 		r["errors"] = recentErrors

@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/mongodb/amboy"
+	"github.com/mongodb/amboy/management"
 	"github.com/mongodb/amboy/pool"
 	"github.com/mongodb/amboy/queue"
-	"github.com/mongodb/amboy/reporting"
 	"github.com/mongodb/anser/apm"
 	"github.com/mongodb/grip"
 	"github.com/mongodb/grip/message"
@@ -92,7 +92,7 @@ func (e *envImpl) initLocalQueue(ctx context.Context) error {
 		return errors.Wrap(err, "problem starting remote queue")
 	}
 
-	e.localReporter = reporting.NewQueueReporter(e.localQueue)
+	e.localManager = management.NewQueueManager(e.localQueue)
 
 	return nil
 }
@@ -134,11 +134,11 @@ func (e *envImpl) initRemoteQueue(ctx context.Context) error {
 	if err = e.remoteQueue.Start(ctx); err != nil {
 		return errors.Wrap(err, "problem starting remote queue")
 	}
-	reporterOpts := reporting.DBQueueReporterOptions{
+	reporterOpts := management.DBQueueManagerOptions{
 		Name:    e.conf.QueueName,
 		Options: opts,
 	}
-	e.remoteReporter, err = reporting.MakeDBQueueState(ctx, reporterOpts, e.client)
+	e.remoteManager, err = management.MakeDBQueueManager(ctx, reporterOpts, e.client)
 	if err != nil {
 		return errors.Wrap(err, "problem starting remote reporter")
 	}
@@ -171,12 +171,12 @@ func (e *envImpl) initQueueGroup(ctx context.Context) error {
 		return errors.Wrap(e.queueGroup.Close(ctx), "problem waiting for remote queue group to close")
 	})
 
-	reporterOpts := reporting.DBQueueReporterOptions{
+	reporterOpts := management.DBQueueManagerOptions{
 		Name:     e.conf.QueueName,
 		Options:  opts,
 		ByGroups: true,
 	}
-	e.groupReporter, err = reporting.MakeDBQueueState(ctx, reporterOpts, e.client)
+	e.groupManager, err = management.MakeDBQueueManager(ctx, reporterOpts, e.client)
 	if err != nil {
 		return errors.Wrap(err, "problem starting remote reporter")
 	}

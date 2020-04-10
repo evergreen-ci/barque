@@ -5,28 +5,35 @@ import (
 	"time"
 
 	"github.com/cheynewallace/tabby"
-	"github.com/mongodb/amboy/reporting"
+	"github.com/mongodb/amboy/management"
 	"github.com/mongodb/amboy/rest"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli"
 )
 
-func reports(opts *ServiceOptions) cli.Command {
+const (
+	jobNameFlagName = "name"
+	jobTypeFlagName = "type"
+)
+
+func queueManagement(opts *ServiceOptions) cli.Command {
 	return cli.Command{
-		Name: "report",
+		Name: "management",
 		Subcommands: []cli.Command{
-			reportingJobStatus(opts),
-			reportingRecentTiming(opts),
-			reportingJobIDs(opts),
-			reportingRecentErrors(opts),
+			managementReportJobStatus(opts),
+			managementReportRecentTiming(opts),
+			managementReportJobIDs(opts),
+			managementReportRecentErrors(opts),
+			managementCompleteJob(opts),
+			managementCompleteJobByType(opts),
 		},
 	}
 }
 
-func reportingJobStatus(opts *ServiceOptions) cli.Command {
+func managementReportJobStatus(opts *ServiceOptions) cli.Command {
 	return cli.Command{
 		Name: "status",
-		Flags: opts.reportingFlags(
+		Flags: opts.managementReportFlags(
 			cli.StringFlag{
 				Name:  "filter",
 				Value: "in-progress",
@@ -37,12 +44,12 @@ func reportingJobStatus(opts *ServiceOptions) cli.Command {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			filter := reporting.CounterFilter(c.String("filter"))
+			filter := management.CounterFilter(c.String("filter"))
 			if err := filter.Validate(); err != nil {
 				return errors.WithStack(err)
 			}
 
-			return opts.withReportingClient(ctx, c, func(client *rest.ReportingClient) error {
+			return opts.withManagementClient(ctx, c, func(client *rest.ManagementClient) error {
 				report, err := client.JobStatus(ctx, filter)
 				if err != nil {
 					return errors.WithStack(err)
@@ -61,10 +68,10 @@ func reportingJobStatus(opts *ServiceOptions) cli.Command {
 	}
 }
 
-func reportingRecentTiming(opts *ServiceOptions) cli.Command {
+func managementReportRecentTiming(opts *ServiceOptions) cli.Command {
 	return cli.Command{
 		Name: "timing",
-		Flags: opts.reportingFlags(
+		Flags: opts.managementReportFlags(
 			cli.DurationFlag{
 				Name:  "duration, d",
 				Value: time.Minute,
@@ -81,12 +88,12 @@ func reportingRecentTiming(opts *ServiceOptions) cli.Command {
 			defer cancel()
 
 			dur := c.Duration("duration")
-			filter := reporting.RuntimeFilter(c.String("filter"))
+			filter := management.RuntimeFilter(c.String("filter"))
 			if err := filter.Validate(); err != nil {
 				return errors.WithStack(err)
 			}
 
-			return opts.withReportingClient(ctx, c, func(client *rest.ReportingClient) error {
+			return opts.withManagementClient(ctx, c, func(client *rest.ManagementClient) error {
 				report, err := client.RecentTiming(ctx, dur, filter)
 				if err != nil {
 					return errors.WithStack(err)
@@ -105,10 +112,10 @@ func reportingRecentTiming(opts *ServiceOptions) cli.Command {
 	}
 }
 
-func reportingJobIDs(opts *ServiceOptions) cli.Command {
+func managementReportJobIDs(opts *ServiceOptions) cli.Command {
 	return cli.Command{
 		Name: "jobs",
-		Flags: opts.reportingFlags(
+		Flags: opts.managementReportFlags(
 			cli.StringFlag{
 				Name:  "filter",
 				Value: "in-progress",
@@ -119,14 +126,14 @@ func reportingJobIDs(opts *ServiceOptions) cli.Command {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			filter := reporting.CounterFilter(c.String("filter"))
+			filter := management.CounterFilter(c.String("filter"))
 			if err := filter.Validate(); err != nil {
 				return errors.WithStack(err)
 			}
 
 			jobTypes := c.StringSlice("type")
 
-			return opts.withReportingClient(ctx, c, func(client *rest.ReportingClient) error {
+			return opts.withManagementClient(ctx, c, func(client *rest.ManagementClient) error {
 
 				t := tabby.New()
 				t.AddHeader("Job Type", "ID", "Group")
@@ -148,10 +155,10 @@ func reportingJobIDs(opts *ServiceOptions) cli.Command {
 	}
 }
 
-func reportingRecentErrors(opts *ServiceOptions) cli.Command {
+func managementReportRecentErrors(opts *ServiceOptions) cli.Command {
 	return cli.Command{
 		Name: "errors",
-		Flags: opts.reportingFlags(
+		Flags: opts.managementReportFlags(
 			cli.DurationFlag{
 				Name:  "duration, d",
 				Value: time.Minute,
@@ -169,15 +176,15 @@ func reportingRecentErrors(opts *ServiceOptions) cli.Command {
 
 			dur := c.Duration("duration")
 
-			filter := reporting.ErrorFilter(c.String("filter"))
+			filter := management.ErrorFilter(c.String("filter"))
 			if err := filter.Validate(); err != nil {
 				return errors.WithStack(err)
 			}
 
 			jobTypes := c.StringSlice("type")
 
-			return opts.withReportingClient(ctx, c, func(client *rest.ReportingClient) error {
-				reports := []*reporting.JobErrorsReport{}
+			return opts.withManagementClient(ctx, c, func(client *rest.ManagementClient) error {
+				reports := []*management.JobErrorsReport{}
 
 				if len(jobTypes) == 0 {
 					report, err := client.RecentErrors(ctx, dur, filter)
@@ -208,6 +215,57 @@ func reportingRecentErrors(opts *ServiceOptions) cli.Command {
 				}
 				t.Print()
 
+				return nil
+			})
+		},
+	}
+}
+
+func managementCompleteJob(opts *ServiceOptions) cli.Command {
+	return cli.Command{
+		Name: "complete-job",
+		Flags: opts.managementReportFlags(
+			cli.StringFlag{
+				Name:  jobNameFlagName,
+				Usage: "name of job to complete",
+			},
+		),
+		Action: func(c *cli.Context) error {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			name := c.String(jobNameFlagName)
+
+			return opts.withManagementClient(ctx, c, func(client *rest.ManagementClient) error {
+				if err := client.MarkComplete(ctx, name); err != nil {
+					return errors.Wrap(err, "problem marking job complete")
+				}
+				return nil
+			})
+		},
+	}
+
+}
+
+func managementCompleteJobByType(opts *ServiceOptions) cli.Command {
+	return cli.Command{
+		Name: "complete-jobs-by-type",
+		Flags: opts.managementReportFlags(
+			cli.StringFlag{
+				Name:  jobTypeFlagName,
+				Usage: "job type to filter by",
+			},
+		),
+		Action: func(c *cli.Context) error {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			jobType := c.String(jobTypeFlagName)
+
+			return opts.withManagementClient(ctx, c, func(client *rest.ManagementClient) error {
+				if err := client.MarkCompleteByType(ctx, jobType); err != nil {
+					return errors.Wrap(err, "problem marking job complete")
+				}
 				return nil
 			})
 		},

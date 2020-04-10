@@ -209,16 +209,16 @@ func runAdminService(ctx context.Context, env barque.Environment, port int) (gim
 
 	app.AddMiddleware(gimlet.MakeRecoveryLogger())
 
-	localReporting := amboyRest.NewReportingService(env.LocalReporter()).App()
-	localReporting.SetPrefix("/amboy/local/reporting")
-	groupReporting := amboyRest.NewReportingService(env.GroupReporter()).App()
-	groupReporting.SetPrefix("/amboy/group/reporting")
-	remoteReporting := amboyRest.NewReportingService(env.RemoteReporter()).App()
-	remoteReporting.SetPrefix("/amboy/remote/reporting")
+	localManagement := amboyRest.NewManagementService(env.LocalManager()).App()
+	localManagement.SetPrefix("/amboy/local/management")
+	groupManagement := amboyRest.NewManagementService(env.GroupManager()).App()
+	groupManagement.SetPrefix("/amboy/group/management")
+	remoteManagement := amboyRest.NewManagementService(env.RemoteManager()).App()
+	remoteManagement.SetPrefix("/amboy/remote/management")
 
-	localAbort := amboyRest.NewManagementService(localPool).App()
+	localAbort := amboyRest.NewAbortablePoolManagementService(localPool).App()
 	localAbort.SetPrefix("/amboy/local/pool")
-	remoteAbort := amboyRest.NewManagementService(remotePool).App()
+	remoteAbort := amboyRest.NewAbortablePoolManagementService(remotePool).App()
 	remoteAbort.SetPrefix("/amboy/remote/pool")
 	groupAbort := amboyRest.NewManagementGroupService(env.QueueGroup()).App()
 	groupAbort.SetPrefix("/amboy/group/pool")
@@ -228,7 +228,7 @@ func runAdminService(ctx context.Context, env barque.Environment, port int) (gim
 	jpmapp := jpm.App(ctx)
 	jpmapp.SetPrefix("/jasper")
 
-	err := app.Merge(gimlet.GetPProfApp(), jpmapp, localReporting, groupReporting, remoteReporting, localAbort, remoteAbort, groupAbort)
+	err := app.Merge(gimlet.GetPProfApp(), jpmapp, localManagement, groupManagement, remoteManagement, localAbort, remoteAbort, groupAbort)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}

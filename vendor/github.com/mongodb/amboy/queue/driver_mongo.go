@@ -464,11 +464,22 @@ func getAtomicQuery(owner, jobName string, modCount int) bson.M {
 }
 
 func isMongoDupKey(err error) bool {
-	wce, ok := errors.Cause(err).(mongo.WriteConcernError)
+	we, ok := errors.Cause(err).(mongo.WriteException)
 	if !ok {
 		return false
 	}
-	return wce.Code == 11000 || wce.Code == 11001 || wce.Code == 12582 || wce.Code == 16460 && strings.Contains(wce.Message, " E11000 ")
+	if we.WriteConcernError != nil {
+		wce := we.WriteConcernError
+		return wce.Code == 11000 || wce.Code == 11001 || wce.Code == 12582 || wce.Code == 16460 && strings.Contains(wce.Message, " E11000 ")
+	}
+	if we.WriteErrors != nil && len(we.WriteErrors) > 0 {
+		for _, wErr := range we.WriteErrors {
+			if wErr.Code == 11000 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (d *mongoDriver) Save(ctx context.Context, j amboy.Job) error {
@@ -511,18 +522,20 @@ func (d *mongoDriver) doUpdate(ctx context.Context, job *registry.JobInterchange
 	query := getAtomicQuery(d.instanceID, job.Name, job.Status.ModificationCount)
 	res, err := d.getCollection().ReplaceOne(ctx, query, job)
 	if err != nil {
-		if isMongoDupKey(err) {
-			grip.Debug(message.Fields{
-				"id":        d.instanceID,
-				"service":   "amboy.queue.mongo",
-				"operation": "save job",
-				"name":      job.Name,
-				"is_group":  d.opts.UseGroups,
-				"group":     d.opts.GroupName,
-				"outcome":   "duplicate key error, ignoring stale job",
-			})
-			return nil
-		}
+		grip.Debug(message.Fields{
+			"id":        d.instanceID,
+			"service":   "amboy.queue.mongo",
+			"operation": "save job",
+			"job_id":    job.Name,
+			"job_type":  job.Type,
+			"scopes":    job.Scopes,
+			"stat":      job.Status,
+			"is_group":  d.opts.UseGroups,
+			"group":     d.opts.GroupName,
+			"outcome":   "duplicate key error, ignoring stale job",
+			"dup_key":   isMongoDupKey(err),
+		})
+
 		return errors.Wrapf(err, "problem saving document %s: %+v", job.Name, res)
 	}
 
@@ -775,7 +788,7 @@ RETRY:
 					continue CURSOR
 				}
 
-				if err := d.dispatcher.Dispatch(ctx, job); err != nil {
+				if err = d.dispatcher.Dispatch(ctx, job); err != nil {
 					job = nil
 					continue CURSOR
 				}

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/mongodb/amboy"
-	"github.com/mongodb/amboy/reporting"
+	"github.com/mongodb/amboy/management"
 	"github.com/mongodb/grip"
 	"github.com/mongodb/grip/message"
 	"github.com/mongodb/jasper"
@@ -47,9 +47,9 @@ type Environment interface {
 	RemoteQueue() amboy.Queue
 	QueueGroup() amboy.QueueGroup
 
-	LocalReporter() reporting.Reporter
-	RemoteReporter() reporting.Reporter
-	GroupReporter() reporting.Reporter
+	LocalManager() management.Management
+	RemoteManager() management.Management
+	GroupManager() management.Management
 
 	RegisterCloser(string, bool, CloserFunc)
 	Close(context.Context) error
@@ -58,19 +58,19 @@ type Environment interface {
 type CloserFunc func(context.Context) error
 
 type envImpl struct {
-	name           string
-	conf           *Configuration
-	client         *mongo.Client
-	jpm            jasper.Manager
-	localQueue     amboy.Queue
-	remoteQueue    amboy.Queue
-	queueGroup     amboy.QueueGroup
-	localReporter  reporting.Reporter
-	remoteReporter reporting.Reporter
-	groupReporter  reporting.Reporter
-	closers        []closerOp
-	context        context.Context
-	mutex          sync.RWMutex
+	name          string
+	conf          *Configuration
+	client        *mongo.Client
+	jpm           jasper.Manager
+	localQueue    amboy.Queue
+	remoteQueue   amboy.Queue
+	queueGroup    amboy.QueueGroup
+	localManager  management.Management
+	remoteManager management.Management
+	groupManager  management.Management
+	closers       []closerOp
+	context       context.Context
+	mutex         sync.RWMutex
 }
 
 type closerOp struct {
@@ -128,25 +128,25 @@ func (e *envImpl) QueueGroup() amboy.QueueGroup {
 	return e.queueGroup
 }
 
-func (e *envImpl) LocalReporter() reporting.Reporter {
+func (e *envImpl) LocalManager() management.Management {
 	e.mutex.RLock()
 	defer e.mutex.RUnlock()
 
-	return e.localReporter
+	return e.localManager
 }
 
-func (e *envImpl) RemoteReporter() reporting.Reporter {
+func (e *envImpl) RemoteManager() management.Management {
 	e.mutex.RLock()
 	defer e.mutex.RUnlock()
 
-	return e.remoteReporter
+	return e.remoteManager
 }
 
-func (e *envImpl) GroupReporter() reporting.Reporter {
+func (e *envImpl) GroupManager() management.Management {
 	e.mutex.RLock()
 	defer e.mutex.RUnlock()
 
-	return e.groupReporter
+	return e.groupManager
 }
 
 func (e *envImpl) RegisterCloser(name string, background bool, fn CloserFunc) {
