@@ -47,9 +47,9 @@ type Environment interface {
 	RemoteQueue() amboy.Queue
 	QueueGroup() amboy.QueueGroup
 
-	LocalManager() management.Management
-	RemoteManager() management.Management
-	GroupManager() management.Management
+	LocalManager() management.Manager
+	RemoteManager() management.Manager
+	GroupManager() management.Manager
 
 	RegisterCloser(string, bool, CloserFunc)
 	Close(context.Context) error
@@ -65,9 +65,9 @@ type envImpl struct {
 	localQueue    amboy.Queue
 	remoteQueue   amboy.Queue
 	queueGroup    amboy.QueueGroup
-	localManager  management.Management
-	remoteManager management.Management
-	groupManager  management.Management
+	localManager  management.Manager
+	remoteManager management.Manager
+	groupManager  management.Manager
 	closers       []closerOp
 	context       context.Context
 	mutex         sync.RWMutex
@@ -128,21 +128,21 @@ func (e *envImpl) QueueGroup() amboy.QueueGroup {
 	return e.queueGroup
 }
 
-func (e *envImpl) LocalManager() management.Management {
+func (e *envImpl) LocalManager() management.Manager {
 	e.mutex.RLock()
 	defer e.mutex.RUnlock()
 
 	return e.localManager
 }
 
-func (e *envImpl) RemoteManager() management.Management {
+func (e *envImpl) RemoteManager() management.Manager {
 	e.mutex.RLock()
 	defer e.mutex.RUnlock()
 
 	return e.remoteManager
 }
 
-func (e *envImpl) GroupManager() management.Management {
+func (e *envImpl) GroupManager() management.Manager {
 	e.mutex.RLock()
 	defer e.mutex.RUnlock()
 
