@@ -28,7 +28,7 @@ func (s *Service) statusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if queue := s.Environment.RemoteQueue(); queue != nil {
-		resp.QueueRunning = queue.Started()
+		resp.QueueRunning = queue.Info().Started
 		resp.QueueStats = queue.Stats(ctx)
 	}
 
