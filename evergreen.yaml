@@ -88,7 +88,7 @@ tasks:
           aws_key: ${aws_key}
           aws_secret: ${aws_secret}
           local_file: gopath/src/github.com/evergreen-ci/barque/build/${task_name}.tar.gz
-          remote_file: sink/${build_id}/barque-${task_name}-${revision}.tar.gz
+          remote_file: barque/${build_id}/barque-${task_name}-${revision}.tar.gz
           bucket: mciuploads
           content_type: application/x-gzip
           permissions: public-read
