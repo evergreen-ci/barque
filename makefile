@@ -113,6 +113,11 @@ vendor-clean:
 	rm -rf vendor/github.com/evergreen-ci/gimlet/vendor/github.com/stretchr/
 	rm -rf vendor/github.com/evergreen-ci/gimlet/vendor/gopkg.in/yaml.v2/
 	rm -rf vendor/github.com/evergreen-ci/pail/vendor/
+	rm -rf vendor/github.com/evergreen-ci/bond/vendor/github.com/mongodb/amboy/
+	rm -rf vendor/github.com/evergreen-ci/bond/vendor/github.com/mongodb/grip/
+	rm -rf vendor/github.com/evergreen-ci/bond/vendor/github.com/pkg/errors/
+	rm -rf vendor/github.com/evergreen-ci/bond/vendor/github.com/mholt/archiver/
+	rm -rf vendor/github.com/evergreen-ci/bond/vendor/github.com/stretchr/testify/
 	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/pkg/errors/
 	rm -rf vendor/github.com/mongodb/amboy/vendor/gopkg.in/yaml.v2/
 	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/aws/aws-sdk-go
