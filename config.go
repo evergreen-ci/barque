@@ -43,12 +43,11 @@ func (c *Configuration) Validate() error {
 
 func (c *Configuration) GetQueueOptions() queue.MongoDBOptions {
 	return queue.MongoDBOptions{
-		URI:             c.MongoDBURI,
-		DB:              c.DatabaseName,
-		Priority:        true,
-		CheckDispatchBy: true,
-		Format:          amboy.BSON2,
-		WaitInterval:    time.Second,
+		URI:          c.MongoDBURI,
+		DB:           c.DatabaseName,
+		Priority:     true,
+		Format:       amboy.BSON2,
+		WaitInterval: time.Second,
 	}
 }
 
