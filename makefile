@@ -112,6 +112,7 @@ vendor-clean:
 	rm -rf vendor/github.com/evergreen-ci/gimlet/vendor/github.com/pmezard/
 	rm -rf vendor/github.com/evergreen-ci/gimlet/vendor/github.com/stretchr/
 	rm -rf vendor/github.com/evergreen-ci/gimlet/vendor/gopkg.in/yaml.v2/
+	rm -rf vendor/github.com/evergreen-ci/gimlet/vendor/go.mongodb.org/
 	rm -rf vendor/github.com/evergreen-ci/pail/vendor/
 	rm -rf vendor/github.com/evergreen-ci/bond/vendor/github.com/mongodb/amboy/
 	rm -rf vendor/github.com/evergreen-ci/bond/vendor/github.com/mongodb/grip/

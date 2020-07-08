@@ -23,6 +23,7 @@ type Configuration struct {
 	Splunk      send.SplunkConnectionInfo `bson:"splunk" json:"splunk" yaml:"splunk"`
 	Flags       OperationalFlags          `bson:"flags" json:"flags" yaml:"flags"`
 	Slack       SlackConfig               `bson:"slack" json:"slack" yaml:"slack"`
+	ServiceAuth ServiceAuthConfig         `bson:"service_auth" json:"service_auth" yaml:"service_auth"`
 	LDAP        LDAPConfig                `bson:"ldap" json:"ldap" yaml:"ldap"`
 	NaiveAuth   NaiveAuthConfig           `bson:"naive_auth" json:"naive_auth" yaml:"naive_auth"`
 	Repobuilder RepobuilderConfig         `bson:"repobuilder" json:"repobuilder" yaml:"repobuilder"`
@@ -72,12 +73,13 @@ func (conf *Configuration) Save(ctx context.Context, env barque.Environment) err
 }
 
 var (
-	confIDKey        = bsonutil.MustHaveTag(Configuration{}, "ID")
-	confSplunkKey    = bsonutil.MustHaveTag(Configuration{}, "Splunk")
-	confFlagsKey     = bsonutil.MustHaveTag(Configuration{}, "Flags")
-	confSlackKey     = bsonutil.MustHaveTag(Configuration{}, "Slack")
-	confLDAPKey      = bsonutil.MustHaveTag(Configuration{}, "LDAP")
-	confNaiveAuthKey = bsonutil.MustHaveTag(Configuration{}, "NaiveAuth")
+	confIDKey          = bsonutil.MustHaveTag(Configuration{}, "ID")
+	confSplunkKey      = bsonutil.MustHaveTag(Configuration{}, "Splunk")
+	confFlagsKey       = bsonutil.MustHaveTag(Configuration{}, "Flags")
+	confSlackKey       = bsonutil.MustHaveTag(Configuration{}, "Slack")
+	confServiceAuthKey = bsonutil.MustHaveTag(Configuration{}, "ServiceAuth")
+	confLDAPKey        = bsonutil.MustHaveTag(Configuration{}, "LDAP")
+	confNaiveAuthKey   = bsonutil.MustHaveTag(Configuration{}, "NaiveAuth")
 )
 
 type SlackConfig struct {
@@ -90,6 +92,15 @@ var (
 	slackConfigOptionsKey = bsonutil.MustHaveTag(SlackConfig{}, "Options")
 	slackConfigTokenKey   = bsonutil.MustHaveTag(SlackConfig{}, "Token")
 	slackConfigLevelKey   = bsonutil.MustHaveTag(SlackConfig{}, "Level")
+)
+
+// ServiceAuth contains settings for using service users.
+type ServiceAuthConfig struct {
+	Enabled bool `bson:"enabled" json:"enabled" yaml:"enabled"`
+}
+
+var (
+	serviceAuthConfigEnabledKey = bsonutil.MustHaveTag(ServiceAuthConfig{}, "Enabled")
 )
 
 // LDAPConfig contains settings for interacting with an LDAP server.

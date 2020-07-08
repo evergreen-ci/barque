@@ -16,7 +16,8 @@ import (
 
 const userCollection = "users"
 
-// Stores user information in database, resulting in a cache for the LDAP user manager.
+// Stores user information in database, resulting in a cache for the user
+// manager.
 type User struct {
 	ID           string     `bson:"_id"`
 	Display      string     `bson:"display_name"`
@@ -88,10 +89,13 @@ func (u *User) Save(ctx context.Context, env barque.Environment) error {
 	return nil
 }
 
-func (u *User) Email() string     { return u.EmailAddress }
-func (u *User) Username() string  { return u.ID }
-func (u *User) GetAPIKey() string { return u.APIKey }
-func (u *User) Roles() []string   { return u.SystemRoles }
+func (u *User) Email() string                            { return u.EmailAddress }
+func (u *User) Username() string                         { return u.ID }
+func (u *User) GetAPIKey() string                        { return u.APIKey }
+func (u *User) Roles() []string                          { return u.SystemRoles }
+func (u *User) GetAccessToken() string                   { return "" }
+func (u *User) GetRefreshToken() string                  { return "" }
+func (u *User) HasPermission(gimlet.PermissionOpts) bool { return false }
 
 func (u *User) DisplayName() string {
 	if u.Display != "" {
@@ -100,7 +104,7 @@ func (u *User) DisplayName() string {
 	return u.ID
 }
 
-func (u *User) SetAPIKey(ctx context.Context, env barque.Environment) (string, error) {
+func (u *User) CreateAPIKey(ctx context.Context, env barque.Environment) (string, error) {
 	k := utility.RandomString()
 
 	res, err := env.DB().Collection(userCollection).UpdateOne(ctx, u.idQuery(), bson.M{
