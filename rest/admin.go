@@ -47,7 +47,6 @@ func (s *Service) fetchUserToken(rw http.ResponseWriter, r *http.Request) {
 		gimlet.WriteResponse(rw, gimlet.MakeJSONInternalErrorResponder(errors.Wrap(err, "problem finding user")))
 		return
 	}
-	s.umconf.AttachCookie(token, rw)
 
 	key := user.GetAPIKey()
 	if key != "" {
