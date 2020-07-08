@@ -38,8 +38,6 @@ functions:
       args: ["${make_args|}", "${target}"]
       add_expansions_to_env: true
       env:
-        LDAP_USER: ${ldap_user}
-        LDAP_PASSWORD: ${ldap_password}
         GOPATH: ${workdir}/gopath
         USERPROFILE: C:\\Users\\Administrator
         VENDOR_PKG: "github.com/${trigger_repo_owner}/${trigger_repo_name}"

@@ -47,7 +47,6 @@ func (s *Service) fetchUserToken(rw http.ResponseWriter, r *http.Request) {
 		gimlet.WriteResponse(rw, gimlet.MakeJSONInternalErrorResponder(errors.Wrap(err, "problem finding user")))
 		return
 	}
-	s.umconf.AttachCookie(token, rw)
 
 	key := user.GetAPIKey()
 	if key != "" {
@@ -69,7 +68,7 @@ func (s *Service) fetchUserToken(rw http.ResponseWriter, r *http.Request) {
 		gimlet.WriteResponse(rw, gimlet.MakeJSONInternalErrorResponder(errors.Wrap(err, "problem generating key")))
 		return
 	}
-	key, err = dbuser.SetAPIKey(ctx, s.Environment)
+	key, err = dbuser.CreateAPIKey(ctx, s.Environment)
 	if err != nil {
 		gimlet.WriteResponse(rw, gimlet.MakeJSONInternalErrorResponder(errors.Wrap(err, "problem generating key")))
 		return
