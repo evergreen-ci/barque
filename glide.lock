@@ -14,7 +14,7 @@ imports:
 - name: github.com/mongodb/jasper
   version: 5fb1ab4916bb2cce94a003fc0277d62dccd9cc90
 - name: github.com/evergreen-ci/gimlet
-  version: 2180fc22266fe2030e026816640a5e395abffd33
+  version: 185166ff85e8801545747fa65a14486e0fe4680b
 - name: go.mongodb.org/mongo-driver
   version: 305bc4a5e4131420fe8ba5628e6faa9e6ade4e86
 - name: github.com/evergreen-ci/pail
