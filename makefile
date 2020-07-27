@@ -53,14 +53,14 @@ coverageHtmlOutput := $(foreach target,$(packages),$(buildDir)/output.$(target).
 $(name):$(buildDir)/$(name)
 	@[ -e $@ ] || ln -s $<
 $(buildDir)/$(name):$(srcFiles)
-	GOOS=$(if $(GOOS),$(GOOS),linux) $(goEnv) $(gobin) build -ldflags "-X github.com/evergreen-ci/barque.BuildRevision=`git rev-parse HEAD`" -o $@ cmd/$(name)/$(name).go
+	$(goEnv) $(gobin) build -ldflags "-X github.com/evergreen-ci/barque.BuildRevision=`git rev-parse HEAD`" -o $@ cmd/$(name)/$(name).go
 $(buildDir)/generate-points:cmd/generate-points/generate-points.go
 	$(goEnv) $(gobin) build -o $@ $<
 generate-points:$(buildDir)/generate-points
 	./$<
 $(buildDir)/make-tarball:cmd/make-tarball/make-tarball.go
 	@mkdir -p $(buildDir)
-	@$(goEnv) $(gobin) build -o $@ $<
+	@GOOS=$(go env GOOS) $(goEnv) $(gobin) build -o $@ $<
 # end dependency installation tools
 
 
