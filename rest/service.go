@@ -185,7 +185,6 @@ func (s *Service) addMiddleware(app *gimlet.APIApp) {
 func (s *Service) addRoutes(app *gimlet.APIApp) {
 	checkUser := gimlet.NewRequireAuthHandler()
 
-	app.AddRoute("/admin/login").Version(1).Post().Handler(s.fetchUserToken)
 	app.AddRoute("/admin/status").Version(1).Get().Handler(s.statusHandler)
 	app.AddRoute("/repobuilder").Version(1).Post().Wrap(checkUser).Handler(s.addRepobuilderJob)
 	app.AddRoute("/repobuilder/check/{job_id}").Version(1).Get().Wrap(checkUser).Handler(s.checkRepobuilderJob)
