@@ -39,9 +39,6 @@ functions:
       add_expansions_to_env: true
       env:
         GOPATH: ${workdir}/gopath
-        USERPROFILE: C:\\Users\\Administrator
-        VENDOR_PKG: "github.com/${trigger_repo_owner}/${trigger_repo_name}"
-        VENDOR_REVISION: ${trigger_revision}
   set-up-mongodb:
     - command: subprocess.exec
       type: setup
@@ -142,11 +139,6 @@ task_groups:
         vars: { target: "clean-results" }
     teardown_task:
       - func: parse-results
-    teardown_group:
-      - command: shell.exec
-        type: setup
-        params:
-          script: "rm -rf ~/.aws"
 
 #######################################
 #           Buildvariants             #
@@ -157,8 +149,8 @@ buildvariants:
     expansions:
       RACE_DETECTOR: true
       MONGODB_URL: https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu1804-4.0.13.tgz
-      GO_BIN_PATH: /opt/golang/go1.12/bin/go
-      GOROOT: /opt/golang/go1.12
+      GO_BIN_PATH: /opt/golang/go1.13/bin/go
+      GOROOT: /opt/golang/go1.13
     run_on:
       - archlinux-test
     tasks: [ "testGroup" ]
@@ -166,8 +158,8 @@ buildvariants:
   - name: lint
     display_name: Lint (Arch Linux)
     expansions:
-      GO_BIN_PATH: /opt/golang/go1.12/bin/go
-      GOROOT: /opt/golang/go1.12
+      GO_BIN_PATH: /opt/golang/go1.13/bin/go
+      GOROOT: /opt/golang/go1.13
       DISABLE_COVERAGE: true
     run_on:
       - archlinux-test
@@ -188,8 +180,8 @@ buildvariants:
     display_name: macOS
     expansions:
       DISABLE_COVERAGE: true
-      GO_BIN_PATH: /opt/golang/go1.12/bin/go
-      GOROOT: /opt/golang/go1.12
+      GO_BIN_PATH: /opt/golang/go1.13/bin/go
+      GOROOT: /opt/golang/go1.13
       MONGODB_URL: https://fastdl.mongodb.org/osx/mongodb-osx-ssl-x86_64-4.0.13.tgz
     run_on:
       - macos-1014
@@ -207,6 +199,6 @@ buildvariants:
     expansions:
       MONGODB_URL: https://fastdl.mongodb.org/win32/mongodb-win32-x86_64-2008plus-ssl-4.0.13.zip
       DISABLE_COVERAGE: true
-      GO_BIN_PATH: "C:\\golang\\go1.9\\bin\\go"
-      GOROOT: "C:\\golang\\go1.9"
+      GO_BIN_PATH: C:/golang/go1.13/bin/go
+      GOROOT: C:/golang/go1.13
     tasks: [ "testGroup" ]
