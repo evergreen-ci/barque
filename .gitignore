@@ -1,4 +1,4 @@
 build
-fabfile.py
-fab_common.py
+fabfile.py*
+fab_common.py*
 barque
