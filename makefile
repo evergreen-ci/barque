@@ -116,6 +116,7 @@ vendor-clean:
 	rm -rf vendor/github.com/evergreen-ci/bond/vendor/github.com/pkg/errors/
 	rm -rf vendor/github.com/evergreen-ci/bond/vendor/github.com/mholt/archiver/
 	rm -rf vendor/github.com/evergreen-ci/bond/vendor/github.com/stretchr/testify/
+	rm -rf vendor/github.com/evergreen-ci/bond/vendor/github.com/google/uuid/
 	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/pkg/errors/
 	rm -rf vendor/github.com/mongodb/amboy/vendor/gopkg.in/yaml.v2/
 	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/aws/aws-sdk-go

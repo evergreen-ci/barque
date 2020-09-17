@@ -34,7 +34,7 @@ imports:
 - name: github.com/stretchr/testify
   version: 890a5c3458b43e6104ff5da8dfa139d013d77544
 - name: github.com/evergreen-ci/bond
-  version: 7a7b59fd9990da6e7f589cdfeb483afe6f4003f4
+  version: 1403b0c02987c5f9ee608f847612ff45702d2adf
 - name: golang.org/x/net
   version: 3a22650c66bd7f4fb6d1e8072ffd7b75c8a27898
 - name: golang.org/x/text
