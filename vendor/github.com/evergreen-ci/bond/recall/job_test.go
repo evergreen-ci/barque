@@ -136,7 +136,10 @@ func (s *DownloadJobSuite) TestTarGzExtensionSpecialCase() {
 }
 
 func (s *DownloadJobSuite) TestSetDirectoryToFileReturnsError() {
-	path := "makefile"
+	wd, err := os.Getwd()
+	s.Require().NoError(err)
+	wd = filepath.Dir(wd)
+	path := filepath.Join(wd, "makefile")
 	s.Error(s.job.setDirectory(path))
 	s.Equal("", s.job.Directory)
 
@@ -236,7 +239,7 @@ func (s *DownloadJobSuite) TestNoopCaseIfDependencyIsSatisfiedAndForceIsNotSet()
 	j, err := NewDownloadJob(url, s.tempDir, false)
 	s.NoError(err)
 
-	j.SetDependency(dependency.NewCreatesFile("/etc"))
+	j.SetDependency(dependency.NewCreatesFile(s.tempDir))
 	s.Equal(j.Dependency().State(), dependency.Passed)
 	j.Run(context.TODO())
 	s.NoError(j.Error())
