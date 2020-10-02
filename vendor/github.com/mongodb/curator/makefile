@@ -119,6 +119,9 @@ vendor-clean:
 	rm -rf vendor/github.com/evergreen-ci/gimlet/vendor/github.com/mongodb/grip
 	rm -rf vendor/github.com/evergreen-ci/gimlet/vendor/github.com/stretchr/testify/
 	rm -rf vendor/github.com/evergreen-ci/gimlet/vendor/go.mongodb.org/
+	rm -rf vendor/github.com/evergreen-ci/pail/vendor/github.com/evergreen-ci/poplar/
+	rm -rf vendor/github.com/evergreen-ci/pail/vendor/github.com/evergreen-ci/utility/
+	rm -rf vendor/github.com/evergreen-ci/pail/vendor/github.com/jmespath/go-jmespath/
 	rm -rf vendor/github.com/evergreen-ci/pail/vendor/github.com/mongodb/grip/
 	rm -rf vendor/github.com/evergreen-ci/pail/vendor/github.com/pkg/errors/
 	rm -rf vendor/github.com/evergreen-ci/pail/vendor/github.com/stretchr/
@@ -141,6 +144,7 @@ vendor-clean:
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/pkg/errors/
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/papertrail/go-tail/
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/gopkg.in/yaml.v2/
+	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/aws/aws-sdk-go/
 	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/google/uuid/
 	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/urfave/cli/
 	rm -rf vendor/github.com/mongodb/amboy/vendor/go.mongodb.org/
@@ -170,6 +174,7 @@ vendor-clean:
 	rm -rf vendor/github.com/mongodb/grip/vendor/github.com/stretchr/testify/
 	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/google/uuid
 	rm -rf vendor/github.com/mongodb/grip/vendor/github.com/google/uuid
+	rm -rf vendor/github.com/mongodb/jasper/vendor/github.com/docker/docker/vendor/github.com/aws/aws-sdk-go/
 	rm -rf vendor/github.com/mongodb/jasper/vendor/github.com/evergreen-ci/aviation/
 	rm -rf vendor/github.com/mongodb/jasper/vendor/github.com/evergreen-ci/birch/
 	rm -rf vendor/github.com/mongodb/jasper/vendor/github.com/evergreen-ci/gimlet/
@@ -216,6 +221,7 @@ vendor-clean:
 	rm -rf vendor/github.com/evergreen-ci/bond/vendor/github.com/pkg/errors/
 	rm -rf vendor/github.com/evergreen-ci/bond/vendor/github.com/satori/go.uuid/
 	rm -rf vendor/github.com/evergreen-ci/bond/vendor/github.com/stretchr/testify/
+	rm -rf vendor/github.com/evergreen-ci/bond/vendor/github.com/google/uuid/
 	rm -rf vendor/github.com/evergreen-ci/lru/vendor/github.com/mongodb/grip/
 	rm -rf vendor/github.com/evergreen-ci/lru/vendor/github.com/pkg/errors/
 	rm -rf vendor/github.com/evergreen-ci/aviation/vendor/github.com/evergreen-ci/gimlet/
@@ -259,22 +265,31 @@ testArgs := -v -timeout=15m
 ifneq (,$(RUN_TEST))
 testArgs += -run='$(RUN_TEST)'
 endif
+ifneq (,$(RUN_COUNT))
+testArgs += -count=$(RUN_COUNT)
+endif
+ifeq (,$(DISABLE_COVERAGE))
+testArgs += -cover
+endif
+ifneq (,$(RACE_DETECTOR))
+testArgs += -race
+endif
 #    implementation for package coverage and test running,mongodb to produce
 #    and save test output.
 #  targets to run the tests and report the output
-$(buildDir)/output.%.test: $(binary) .FORCE
+$(buildDir)/output.%.test: .FORCE
 	$(gobin) test $(testArgs) ./$(if $(subst $(name),,$*),$(subst -,/,$*),) 2>&1 | tee $@
-$(buildDir)/output.%.race: $(binary) .FORCE
+$(buildDir)/output.%.race: .FORCE
 	$(gobin) test $(testArgs) ./$(if $(subst $(name),,$*),$(subst -,/,$*),) 2>&1 | tee $@
 #  targets to generate gotest output from the linter.
 # We have to handle the PATH specially for CI, because if the PATH has a different version of Go in it, it'll break.
 $(buildDir)/output.%.lint:$(buildDir)/run-linter $(testSrcFiles) .FORCE
 	@$(if $(GO_BIN_PATH),PATH="$(shell dirname $(GO_BIN_PATH)):$(PATH)") ./$< --output=$@ --lintBin="$(buildDir)/golangci-lint" --packages='$*'
 #  targets to process and generate coverage reports
-$(buildDir)/output.%.coverage: $(binary) .FORCE
+$(buildDir)/output.%.coverage: .FORCE
 	$(gobin) test $(testArgs) ./$(if $(subst $(name),,$*),$(subst -,/,$*),)  -covermode=count -coverprofile $@ | tee $(subst coverage,test,$@)
 	@-[ -f $@ ] && $(gobin) tool cover -func=$@ | sed 's%$(projectPath)/%%' | column -t
-$(buildDir)/output.%.coverage.html: $(binary) $(buildDir)/output.%.coverage
+$(buildDir)/output.%.coverage.html: $(buildDir)/output.%.coverage
 	$(gobin) tool cover -html=$< -o $@
 # end test and coverage artifacts
 

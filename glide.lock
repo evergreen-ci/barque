@@ -24,7 +24,7 @@ imports:
 - name: github.com/urfave/cli
   version: 01857ac33766ce0c93856370626f9799281c14f4
 - name: github.com/mongodb/curator
-  version: 569bb822c579ca7adc8ee9b42c5e28b6c53bc2be
+  version: 259274b0fd9c67a7a9fb13dd0caa9a45a8b7634d
 - name: github.com/mholt/archiver
   version: e4ef56d48eb029648b0e895bb0b6a393ef0829c3
 - name: github.com/aws/aws-sdk-go
@@ -34,7 +34,7 @@ imports:
 - name: github.com/stretchr/testify
   version: 890a5c3458b43e6104ff5da8dfa139d013d77544
 - name: github.com/evergreen-ci/bond
-  version: 1403b0c02987c5f9ee608f847612ff45702d2adf
+  version: cd743a5eabee6eab7a40b9a07a829202649e1870
 - name: golang.org/x/net
   version: 3a22650c66bd7f4fb6d1e8072ffd7b75c8a27898
 - name: golang.org/x/text
