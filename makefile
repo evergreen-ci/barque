@@ -91,7 +91,6 @@ phony += lint lint-deps build build-race race test coverage coverage-html list-r
 vendor-clean:
 	rm -rf vendor/github.com/mongodb/jasper/vendor/github.com/evergreen-ci/certdepot/vendor/github.com/mongodb/anser/
 	rm -rf vendor/github.com/mongodb/jasper/vendor/github.com/evergreen-ci/poplar/vendor/github.com/evergreen-ci/pail/
-	rm -rf vendor/github.com/mongodb/jasper/vendor/github.com/evergreen-ci/poplar/vendor/github.com/mongodb/mongo-go-driver/
 	rm -rf vendor/github.com/mongodb/jasper/vendor/github.com/evergreen-ci/poplar/vendor/gopkg.in/yaml.v2/
 	rm -rf vendor/github.com/mongodb/jasper/vendor/github.com/evergreen-ci/timber/vendor/gopkg.in/yaml.v2
 	rm -rf vendor/github.com/mongodb/jasper/vendor/go.mongodb.org/mongo-driver/
@@ -123,7 +122,6 @@ vendor-clean:
 	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/davecgh/go-spew
 	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/evergreen-ci/gimlet
 	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/mongodb/grip/
-	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/mongodb/mongo-go-driver
 	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/stretchr/testify
 	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/tychoish/gimlet/
 	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/urfave/cli/
@@ -135,6 +133,7 @@ vendor-clean:
 	rm -rf vendor/github.com/mongodb/anser/vendor/github.com/tychoish/tarjan
 	rm -rf vendor/github.com/mongodb/anser/vendor/github.com/pkg/errors
 	rm -rf vendor/github.com/mongodb/anser/vendor/github.com/stretchr
+	rm -rf vendor/github.com/mongodb/anser/vendor/gopkg.in/mgo.v2/
 	rm -rf vendor/github.com/mongodb/anser/vendor/go.mongodb.org/mongo-driver
 	rm -rf vendor/github.com/mongodb/grip/vendor/github.com/davecgh/go-spew/
 	rm -rf vendor/github.com/mongodb/grip/vendor/github.com/pkg/
