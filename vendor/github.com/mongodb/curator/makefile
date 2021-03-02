@@ -16,10 +16,6 @@ projectPath := $(orgPath)/$(name)
 # start build configuratino
 ldFlags := $(if $(DEBUG_ENABLED),,-w -s)
 ldFlags += -X=github.com/mongodb/curator.BuildRevision=$(shell git rev-parse HEAD)
-ldFlags += -X=github.com/mongodb/curator.JasperChecksum=$(shell shasum vendor/github.com/mongodb/jasper/jasper.proto | cut -f 1 -d ' ')
-ldFlags += -X=github.com/mongodb/curator.PoplarEventsChecksum=$(shell shasum vendor/github.com/evergreen-ci/poplar/metrics.proto | cut -f 1 -d ' ')
-ldFlags += -X=github.com/mongodb/curator.PoplarRecorderChecksum=$(shell shasum vendor/github.com/evergreen-ci/poplar/recorder.proto | cut -f 1 -d ' ')
-ldFlags += -X=github.com/mongodb/curator.CedarMetricsChecksum=$(shell shasum vendor/github.com/evergreen-ci/poplar/vendor/cedar.proto | cut -f 1 -d ' ')
 # end build configuration
 
 
@@ -125,24 +121,27 @@ vendor-clean:
 	rm -rf vendor/github.com/evergreen-ci/pail/vendor/github.com/mongodb/grip/
 	rm -rf vendor/github.com/evergreen-ci/pail/vendor/github.com/pkg/errors/
 	rm -rf vendor/github.com/evergreen-ci/pail/vendor/github.com/stretchr/
+	rm -rf vendor/github.com/evergreen-ci/pail/vendor/go.mongodb.org/mongo-driver/
 	rm -rf vendor/github.com/evergreen-ci/pail/{scripts,cmd,evergreen.yaml}
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/golang/protobuf
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/google/
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/evergreen-ci/aviation/
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/evergreen-ci/birch/
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/evergreen-ci/pail/
-	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/evergreen-ci/birch
+	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/evergreen-ci/birch/
+	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/evergreen-ci/juniper/
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/mongodb/amboy/
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/mongodb/grip/
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/mongodb/ftdc/
+	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/papertrail/go-tail/
+	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/pkg/errors/
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/stretchr/testify/
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/golang.org/x/net/
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/golang.org/x/sys/
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/google.golang.org/genproto/
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/google.golang.org/grpc/
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/golang.org/x/text/
-	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/pkg/errors/
-	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/github.com/papertrail/go-tail/
+	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/go.mongodb.org/mongo-driver/
 	rm -rf vendor/github.com/evergreen-ci/poplar/vendor/gopkg.in/yaml.v2/
 	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/aws/aws-sdk-go/
 	rm -rf vendor/github.com/mongodb/amboy/vendor/github.com/google/uuid/
@@ -164,11 +163,11 @@ vendor-clean:
 	rm -rf vendor/github.com/mongodb/ftdc/vendor/github.com/evergreen-ci/birch/
 	rm -rf vendor/github.com/mongodb/ftdc/vendor/github.com/mongodb/grip
 	rm -rf vendor/github.com/mongodb/ftdc/vendor/github.com/evergreen-ci/birch
-	rm -rf vendor/github.com/mongodb/ftdc/vendor/github.com/mongodb/mongo-go-driver
 	rm -rf vendor/github.com/mongodb/ftdc/vendor/github.com/pkg/errors
 	rm -rf vendor/github.com/mongodb/ftdc/vendor/github.com/satori/go.uuid
 	rm -rf vendor/github.com/mongodb/ftdc/vendor/github.com/stretchr/testify
 	rm -rf vendor/github.com/mongodb/ftdc/vendor/github.com/stretchr/testify
+	rm -rf vendor/github.com/mongodb/ftdc/vendor/go.mongodb.org/mongo-driver/
 	rm -rf vendor/github.com/mongodb/grip/vendor/github.com/google/uuid/
 	rm -rf vendor/github.com/mongodb/grip/vendor/github.com/pkg/
 	rm -rf vendor/github.com/mongodb/grip/vendor/github.com/stretchr/testify/
@@ -233,6 +232,7 @@ vendor-clean:
 	rm -rf vendor/github.com/evergreen-ci/timber/vendor/go.mongodb.org/
 	rm -rf vendor/github.com/evergreen-ci/timber/vendor/github.com/evergreen-ci/aviation/
 	rm -rf vendor/github.com/evergreen-ci/timber/vendor/github.com/evergreen-ci/utility/
+	rm -rf vendor/github.com/evergreen-ci/timber/vendor/github.com/evergreen-ci/juniper/
 	rm -rf vendor/github.com/evergreen-ci/timber/vendor/github.com/golang/protobuf/
 	rm -rf vendor/github.com/evergreen-ci/timber/vendor/github.com/mongodb/grip/
 	rm -rf vendor/github.com/evergreen-ci/timber/vendor/github.com/stretchr/testify/
