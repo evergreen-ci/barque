@@ -8,6 +8,7 @@ import (
 	"github.com/mongodb/amboy"
 	"github.com/mongodb/amboy/queue"
 	"github.com/mongodb/grip"
+	"github.com/mongodb/grip/message"
 	yaml "gopkg.in/yaml.v2"
 )
 
@@ -75,17 +76,20 @@ func (c *Configuration) GetAuth() (string, string, error) {
 }
 
 func GetAuthFromYAML(authFile string) (string, string, error) {
-	creds := &dbCreds{}
 
 	file, err := os.Open(authFile)
 	if err != nil {
+		grip.Warning(message.Fields{"message": "error opening authfile",
+			"authfile": authFile,
+			"err":      err})
 		return "", "", err
 	}
 	defer file.Close()
 
 	decoder := yaml.NewDecoder(file)
 
-	if err := decoder.Decode(&creds); err != nil {
+	creds := &dbCreds{}
+	if err := decoder.Decode(creds); err != nil {
 		return "", "", err
 	}
 
