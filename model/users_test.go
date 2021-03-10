@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ func init() {
 		MongoDBURI:   "mongodb://localhost:27017",
 		DatabaseName: "barque_model_test",
 		NumWorkers:   2,
+		DBAuthFile:   os.Getenv("BARQUE_DB_CREDS_FILE"),
 	})
 	grip.EmergencyPanic(err)
 	barque.SetEnvironment(env)

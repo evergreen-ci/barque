@@ -2,11 +2,13 @@ package barque
 
 import (
 	"errors"
+	"os"
 	"time"
 
 	"github.com/mongodb/amboy"
 	"github.com/mongodb/amboy/queue"
 	"github.com/mongodb/grip"
+	yaml "gopkg.in/yaml.v2"
 )
 
 type Configuration struct {
@@ -17,6 +19,7 @@ type Configuration struct {
 	SocketTimeout      time.Duration
 	DisableQueues      bool
 	NumWorkers         int
+	DBAuthFile         string
 }
 
 func (c *Configuration) Validate() error {
@@ -56,4 +59,35 @@ func (c *Configuration) GetQueueGroupOptions() queue.MongoDBOptions {
 	opts.UseGroups = true
 	opts.GroupName = c.QueueName
 	return opts
+}
+
+func (c *Configuration) HasAuth() bool {
+	return c.DBAuthFile != ""
+}
+
+type dbCreds struct {
+	DBUser string `yaml:"mdb_database_username"`
+	DBPwd  string `yaml:"mdb_database_password"`
+}
+
+func (c *Configuration) GetAuth() (string, string, error) {
+	return GetAuthFromYAML(c.DBAuthFile)
+}
+
+func GetAuthFromYAML(authFile string) (string, string, error) {
+	creds := &dbCreds{}
+
+	file, err := os.Open(authFile)
+	if err != nil {
+		return "", "", err
+	}
+	defer file.Close()
+
+	decoder := yaml.NewDecoder(file)
+
+	if err := decoder.Decode(&creds); err != nil {
+		return "", "", err
+	}
+
+	return creds.DBUser, creds.DBPwd, nil
 }

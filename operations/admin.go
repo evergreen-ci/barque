@@ -48,6 +48,7 @@ func DumpConf() cli.Command {
 				DatabaseName:  c.String(dbNameFlag),
 				NumWorkers:    1,
 				DisableQueues: true,
+				DBAuthFile:    c.String(dbCredsFileFlag),
 			}
 
 			env, err := barque.NewEnvironment(ctx, conf)
@@ -124,6 +125,7 @@ func LoadConf() cli.Command {
 				DatabaseName:  c.String(dbNameFlag),
 				NumWorkers:    1,
 				DisableQueues: true,
+				DBAuthFile:    c.String(dbCredsFileFlag),
 			}
 
 			env, err := barque.NewEnvironment(ctx, conf)

@@ -16,6 +16,7 @@ const (
 	numWorkersFlag               = "workers"
 	dbURIFlag                    = "dbUri"
 	dbNameFlag                   = "dbName"
+	dbCredsFileFlag              = "dbCreds"
 	disableWorkersFlag           = "disableRemoteWorkers"
 	disableAdminFlagName         = "disableAdmin"
 	disableBackgroundJobCreation = "disableBackgroundJobCreation"
@@ -59,6 +60,11 @@ func dbFlags(flags ...cli.Flag) []cli.Flag {
 			Usage:  "specify a database name to use",
 			Value:  "barque",
 			EnvVar: "BARQUE_DATABASE_NAME",
+		},
+		cli.StringFlag{
+			Name:   dbCredsFileFlag,
+			Usage:  "specify a DB credential file location",
+			EnvVar: "BARQUE_DB_CREDS_FILE",
 		})
 }
 
