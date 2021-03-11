@@ -72,10 +72,10 @@ type dbCreds struct {
 }
 
 func (c *Configuration) GetAuth() (string, string, error) {
-	return GetAuthFromYAML(c.DBAuthFile)
+	return getAuthFromYAML(c.DBAuthFile)
 }
 
-func GetAuthFromYAML(authFile string) (string, string, error) {
+func getAuthFromYAML(authFile string) (string, string, error) {
 
 	file, err := os.Open(authFile)
 	if err != nil {
