@@ -43,6 +43,7 @@ func startWorkers() cli.Command {
 				NumWorkers:    c.Int(numWorkersFlag),
 				DisableQueues: c.Bool(disableWorkersFlag),
 				QueueName:     barque.QueueName,
+				DBAuthFile:    c.String(dbCredsFileFlag),
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -111,6 +112,7 @@ func startWebServer() cli.Command {
 				NumWorkers:    c.Int(numWorkersFlag),
 				DisableQueues: c.Bool(disableWorkersFlag),
 				QueueName:     barque.QueueName,
+				DBAuthFile:    c.String(dbCredsFileFlag),
 			}
 
 			env, err := barque.NewEnvironment(ctx, conf)

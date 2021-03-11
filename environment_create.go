@@ -45,11 +45,25 @@ func NewEnvironment(ctx context.Context, conf *Configuration) (Environment, erro
 
 func (e *envImpl) initDB(ctx context.Context) error {
 	var err error
-	e.client, err = mongo.NewClient(options.Client().ApplyURI(e.conf.MongoDBURI).
+	opts := options.Client().ApplyURI(e.conf.MongoDBURI).
 		SetConnectTimeout(e.conf.MongoDBDialTimeout).
 		SetSocketTimeout(e.conf.SocketTimeout).
 		SetServerSelectionTimeout(e.conf.SocketTimeout).
-		SetMonitor(apm.NewLoggingMonitor(ctx, time.Minute, apm.NewBasicMonitor(&apm.MonitorConfig{AllTags: true})).DriverAPM()))
+		SetMonitor(apm.NewLoggingMonitor(ctx, time.Minute, apm.NewBasicMonitor(&apm.MonitorConfig{AllTags: true})).DriverAPM())
+	if e.conf.HasAuth() {
+		ymlUser, ymlPwd, err := e.conf.GetAuth()
+		if err != nil {
+			grip.Error(errors.Wrap(err, "problem getting auth from yaml authfile, attempting to connect without auth"))
+		}
+		if err == nil && ymlUser != "" {
+			credential := options.Credential{
+				Username: ymlUser,
+				Password: ymlPwd,
+			}
+			opts.SetAuth(credential)
+		}
+	}
+	e.client, err = mongo.NewClient(opts)
 	if err != nil {
 		return errors.Wrap(err, "problem constructing mongodb client")
 	}

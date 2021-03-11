@@ -2,11 +2,14 @@ package barque
 
 import (
 	"errors"
+	"os"
 	"time"
 
 	"github.com/mongodb/amboy"
 	"github.com/mongodb/amboy/queue"
 	"github.com/mongodb/grip"
+	"github.com/mongodb/grip/message"
+	yaml "gopkg.in/yaml.v2"
 )
 
 type Configuration struct {
@@ -17,6 +20,7 @@ type Configuration struct {
 	SocketTimeout      time.Duration
 	DisableQueues      bool
 	NumWorkers         int
+	DBAuthFile         string
 }
 
 func (c *Configuration) Validate() error {
@@ -56,4 +60,38 @@ func (c *Configuration) GetQueueGroupOptions() queue.MongoDBOptions {
 	opts.UseGroups = true
 	opts.GroupName = c.QueueName
 	return opts
+}
+
+func (c *Configuration) HasAuth() bool {
+	return c.DBAuthFile != ""
+}
+
+type dbCreds struct {
+	DBUser string `yaml:"mdb_database_username"`
+	DBPwd  string `yaml:"mdb_database_password"`
+}
+
+func (c *Configuration) GetAuth() (string, string, error) {
+	return getAuthFromYAML(c.DBAuthFile)
+}
+
+func getAuthFromYAML(authFile string) (string, string, error) {
+
+	file, err := os.Open(authFile)
+	if err != nil {
+		grip.Warning(message.Fields{"message": "error opening authfile",
+			"authfile": authFile,
+			"err":      err})
+		return "", "", err
+	}
+	defer file.Close()
+
+	decoder := yaml.NewDecoder(file)
+
+	creds := &dbCreds{}
+	if err := decoder.Decode(creds); err != nil {
+		return "", "", err
+	}
+
+	return creds.DBUser, creds.DBPwd, nil
 }
