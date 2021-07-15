@@ -45,3 +45,7 @@ imports:
   version: 11cf6ea5d3e9afda34846e1db511aa218049471c
 - name: github.com/google/uuid
   version: c2e93f3ae59f2904160ceaab466009f965df46d6
+- name: github.com/sabhiram/go-git-ignore
+  version: d3107576ba9425fc1c85f4b3569c4631b805a02e
+- name: github.com/jpillora/backoff
+  version: d80867952dff4e2fbfb4280ded4ff94d67790457
