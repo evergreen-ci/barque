@@ -30,7 +30,7 @@ imports:
 - name: github.com/aws/aws-sdk-go
   version: cf66c348f82c79de333bd788d4f782c4d623ebad
 - name: github.com/evergreen-ci/utility
-  version: 29e693dadcd3a5df21206a8fbdecf061b726d008
+  version: 8a88f29180ba74476c65e36075bc372013e3ac05
 - name: github.com/stretchr/testify
   version: 890a5c3458b43e6104ff5da8dfa139d013d77544
 - name: github.com/evergreen-ci/bond
@@ -45,3 +45,7 @@ imports:
   version: 11cf6ea5d3e9afda34846e1db511aa218049471c
 - name: github.com/google/uuid
   version: c2e93f3ae59f2904160ceaab466009f965df46d6
+- name: github.com/sabhiram/go-git-ignore
+  version: d3107576ba9425fc1c85f4b3569c4631b805a02e
+- name: github.com/jpillora/backoff
+  version: d80867952dff4e2fbfb4280ded4ff94d67790457
