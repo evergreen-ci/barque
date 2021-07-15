@@ -49,3 +49,6 @@ imports:
   version: d3107576ba9425fc1c85f4b3569c4631b805a02e
 - name: github.com/jpillora/backoff
   version: d80867952dff4e2fbfb4280ded4ff94d67790457
+- name: golang.org/x/oauth2
+  version: f047394b6d14284165300fd82dad67edb3a4d7f6
+
