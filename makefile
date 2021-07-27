@@ -242,13 +242,6 @@ init-rs:mongodb/.get-mongodb
 check-mongod:mongodb/.get-mongodb
 	./mongodb/mongo --nodb --eval "assert.soon(function(x){try{var d = new Mongo(\"localhost:27017\"); return true}catch(e){return false}}, \"timed out connecting\")"
 	@echo "mongod is up"
-run-glide:$(buildDir)/run-glide
-	$(buildDir)/run-glide $(if $(VENDOR_REVISION),--revision $(VENDOR_REVISION),) $(if $(VENDOR_PKG),--package $(VENDOR_PKG) ,)
-ifneq ($(VENDOR_REVISION),)
-revendor:run-glide vendor-clean
-else
-revendor:
-endif
 # end mongodb targets
 
 
