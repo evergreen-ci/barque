@@ -1,53 +1,53 @@
 hash: 75c7ee1fdb954853d3ab8f1b62b85ad7c1a8719da2d2396238f0eba863fb86e0
 updated: 2016-06-16T14:14:58.047959949-04:00
 imports:
-- name: gopkg.in/yaml.v2
-  version: 7649d4548cb53a614db133b2a8ac1f31859dda8c
-- name: github.com/evergreen-ci/pail
-  version: 8bead7f820b8402b7c94c1554951c08199bdd3cd
-- name: github.com/mongodb/amboy
-  version: 5689548015d45548dcc2768377860b288495890e
-- name: github.com/mongodb/grip
-  version: 0c6d5f1374e2a07a8ce72cfd765bea028aa6b7ec
-- name: github.com/mongodb/anser
-  version: dfd9f3040d44054bcd33f4006b73edd78be0f5fa
-- name: github.com/mongodb/jasper
-  version: 5fb1ab4916bb2cce94a003fc0277d62dccd9cc90
-- name: github.com/evergreen-ci/gimlet
-  version: 185166ff85e8801545747fa65a14486e0fe4680b
-- name: go.mongodb.org/mongo-driver
-  version: 305bc4a5e4131420fe8ba5628e6faa9e6ade4e86
-- name: github.com/evergreen-ci/pail
-  version: 055ae19f1c325c86bfebb1678395242f26b2ab8c
-- name: github.com/pkg/errors
-  version: 856c240a51a2bf8fb8269ea7f3f9b046aadde36e
-- name: github.com/urfave/cli
-  version: 01857ac33766ce0c93856370626f9799281c14f4
-- name: github.com/mongodb/curator
-  version: 5b983c3bd4f11d65a4036cdc21f072a042bcb282
-- name: github.com/mholt/archiver
-  version: e4ef56d48eb029648b0e895bb0b6a393ef0829c3
-- name: github.com/aws/aws-sdk-go
-  version: cf66c348f82c79de333bd788d4f782c4d623ebad
-- name: github.com/evergreen-ci/utility
-  version: 8a88f29180ba74476c65e36075bc372013e3ac05
-- name: github.com/stretchr/testify
-  version: 890a5c3458b43e6104ff5da8dfa139d013d77544
-- name: github.com/evergreen-ci/bond
-  version: cd743a5eabee6eab7a40b9a07a829202649e1870
-- name: golang.org/x/net
-  version: 3a22650c66bd7f4fb6d1e8072ffd7b75c8a27898
-- name: golang.org/x/text
-  version: 905a57155faa8230500121607930ebb9dd8e139c
-- name: gopkg.in/mgo.v2
-  version: 60f23985327354fe2d4dde32ba05598bb047a114
-- name: github.com/PuerkitoBio/rehttp
-  version: 11cf6ea5d3e9afda34846e1db511aa218049471c
-- name: github.com/google/uuid
-  version: c2e93f3ae59f2904160ceaab466009f965df46d6
-- name: github.com/sabhiram/go-git-ignore
-  version: d3107576ba9425fc1c85f4b3569c4631b805a02e
-- name: github.com/jpillora/backoff
-  version: d80867952dff4e2fbfb4280ded4ff94d67790457
-- name: golang.org/x/oauth2
-  version: f047394b6d14284165300fd82dad67edb3a4d7f6
+  - name: gopkg.in/yaml.v2
+    version: 7649d4548cb53a614db133b2a8ac1f31859dda8c
+  - name: github.com/evergreen-ci/pail
+    version: 8bead7f820b8402b7c94c1554951c08199bdd3cd
+  - name: github.com/mongodb/amboy
+    version: 5689548015d45548dcc2768377860b288495890e
+  - name: github.com/mongodb/grip
+    version: 0c6d5f1374e2a07a8ce72cfd765bea028aa6b7ec
+  - name: github.com/mongodb/anser
+    version: dfd9f3040d44054bcd33f4006b73edd78be0f5fa
+  - name: github.com/mongodb/jasper
+    version: 5fb1ab4916bb2cce94a003fc0277d62dccd9cc90
+  - name: github.com/evergreen-ci/gimlet
+    version: 3aa4522aad2fa8ad15755e00441b597d6d54cc5e
+  - name: go.mongodb.org/mongo-driver
+    version: 305bc4a5e4131420fe8ba5628e6faa9e6ade4e86
+  - name: github.com/evergreen-ci/pail
+    version: 055ae19f1c325c86bfebb1678395242f26b2ab8c
+  - name: github.com/pkg/errors
+    version: 856c240a51a2bf8fb8269ea7f3f9b046aadde36e
+  - name: github.com/urfave/cli
+    version: 01857ac33766ce0c93856370626f9799281c14f4
+  - name: github.com/mongodb/curator
+    version: 5b983c3bd4f11d65a4036cdc21f072a042bcb282
+  - name: github.com/mholt/archiver
+    version: e4ef56d48eb029648b0e895bb0b6a393ef0829c3
+  - name: github.com/aws/aws-sdk-go
+    version: cf66c348f82c79de333bd788d4f782c4d623ebad
+  - name: github.com/evergreen-ci/utility
+    version: 8a88f29180ba74476c65e36075bc372013e3ac05
+  - name: github.com/stretchr/testify
+    version: 890a5c3458b43e6104ff5da8dfa139d013d77544
+  - name: github.com/evergreen-ci/bond
+    version: cd743a5eabee6eab7a40b9a07a829202649e1870
+  - name: golang.org/x/net
+    version: 3a22650c66bd7f4fb6d1e8072ffd7b75c8a27898
+  - name: golang.org/x/text
+    version: 905a57155faa8230500121607930ebb9dd8e139c
+  - name: gopkg.in/mgo.v2
+    version: 60f23985327354fe2d4dde32ba05598bb047a114
+  - name: github.com/PuerkitoBio/rehttp
+    version: 11cf6ea5d3e9afda34846e1db511aa218049471c
+  - name: github.com/google/uuid
+    version: c2e93f3ae59f2904160ceaab466009f965df46d6
+  - name: github.com/sabhiram/go-git-ignore
+    version: d3107576ba9425fc1c85f4b3569c4631b805a02e
+  - name: github.com/jpillora/backoff
+    version: d80867952dff4e2fbfb4280ded4ff94d67790457
+  - name: golang.org/x/oauth2
+    version: f047394b6d14284165300fd82dad67edb3a4d7f6
