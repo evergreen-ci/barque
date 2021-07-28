@@ -28,7 +28,7 @@ export GO111MODULE := off
 # end environment setup
 
 
-# Ensure the build directory exists, since most targets require it.
+# Ensure the build directory exists, since most targets require it
 $(shell mkdir -p $(buildDir))
 
 
