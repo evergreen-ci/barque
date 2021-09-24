@@ -3,22 +3,18 @@ package units
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/evergreen-ci/barque"
 	"github.com/mongodb/amboy"
 	"github.com/mongodb/amboy/dependency"
 	"github.com/mongodb/amboy/job"
-	"github.com/mongodb/amboy/management"
 	"github.com/mongodb/amboy/registry"
 	"github.com/mongodb/grip"
 	"github.com/mongodb/grip/message"
-	"github.com/pkg/errors"
 )
 
 const (
 	amboyStatsCollectorJobName = "amboy-stats-collector"
-	enableExtendedRemoteStats  = true
 )
 
 func init() {
@@ -91,44 +87,5 @@ func (j *amboyStatsCollector) Run(ctx context.Context) {
 			"stats":   remoteQueue.Stats(ctx),
 		})
 
-		if enableExtendedRemoteStats {
-			j.AddError(j.collectExtendedRemoteStats(ctx))
-		}
 	}
-}
-
-func (j *amboyStatsCollector) collectExtendedRemoteStats(ctx context.Context) error {
-	reporter := j.env.RemoteManager()
-	if reporter == nil {
-		return errors.New("reporter is not defined")
-	}
-
-	r := message.Fields{
-		"message": "amboy remote queue report",
-	}
-
-	pending, err := reporter.JobStatus(ctx, management.Pending)
-	j.AddError(err)
-	if pending != nil {
-		r["pending"] = pending
-	}
-	inprog, err := reporter.JobStatus(ctx, management.InProgress)
-	j.AddError(err)
-	if inprog != nil {
-		r["inprog"] = inprog
-	}
-	stale, err := reporter.JobStatus(ctx, management.Stale)
-	j.AddError(err)
-	if stale != nil {
-		r["stale"] = stale
-	}
-
-	recentErrors, err := reporter.RecentErrors(ctx, time.Minute, management.StatsOnly)
-	j.AddError(err)
-	if recentErrors != nil {
-		r["errors"] = recentErrors
-	}
-
-	grip.InfoWhen(len(r) > 1, r)
-	return nil
 }
