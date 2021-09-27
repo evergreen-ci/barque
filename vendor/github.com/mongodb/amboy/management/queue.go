@@ -2,9 +2,11 @@ package management
 
 import (
 	"context"
+	"regexp"
 	"time"
 
 	"github.com/mongodb/amboy"
+	"github.com/mongodb/grip"
 	"github.com/pkg/errors"
 )
 
@@ -12,572 +14,228 @@ type queueManager struct {
 	queue amboy.Queue
 }
 
-// NewQueueManager returns a queue manager that provides the supported
-// Management interface by calling the output of amboy.Queue.Results() and
-// amboy.Queue.JobStats(), iterating over jobs directly. Use this to manage
-// in-memory queue implementations more generically.
+// NewQueueManager returns a Manager implementation built on top of the
+// amboy.Queue interface. This can be used to manage queues more generically.
 //
-// The management algorithms may impact performance of jobs, as queues may
-// require some locking to their Jobs function. Additionally, the speed of
-// these operations will necessarily degrade with the number of jobs. Do pass
-// contexts with timeouts to in these cases.
+// The management algorithms may impact performance of queues, as queues may
+// require some locking to perform the underlying operations. The performance of
+// these operations will degrade with the number of jobs that the queue
+// contains, so best practice is to pass contexts with timeouts to all methods.
 func NewQueueManager(q amboy.Queue) Manager {
 	return &queueManager{
 		queue: q,
 	}
 }
 
-func (m *queueManager) JobStatus(ctx context.Context, f StatusFilter) (*JobStatusReport, error) {
+func (m *queueManager) JobStatus(ctx context.Context, f StatusFilter) ([]JobTypeCount, error) {
 	if err := f.Validate(); err != nil {
-		return nil, errors.WithStack(err)
+		return nil, errors.Wrap(err, "invalid filter")
 	}
-
-	var cancel context.CancelFunc
-	ctx, cancel = context.WithCancel(ctx)
-	defer cancel()
 
 	counters := map[string]int{}
-	switch f {
-	case InProgress:
-		for stat := range m.queue.JobStats(ctx) {
-			if stat.InProgress {
-				job, ok := m.queue.Get(ctx, stat.ID)
-				if ok {
-					counters[job.Type().Name]++
-				}
-			}
+	for info := range m.queue.JobInfo(ctx) {
+		if !m.matchesStatusFilter(info, f) {
+			continue
 		}
-	case Pending:
-		for stat := range m.queue.JobStats(ctx) {
-			if !stat.Completed && !stat.InProgress {
-				job, ok := m.queue.Get(ctx, stat.ID)
-				if ok {
-					counters[job.Type().Name]++
-				}
-			}
-		}
-	case Stale:
-		for stat := range m.queue.JobStats(ctx) {
-			if !stat.Completed && stat.InProgress && time.Since(stat.ModificationTime) > m.queue.Info().LockTimeout {
-				job, ok := m.queue.Get(ctx, stat.ID)
-				if ok {
-					counters[job.Type().Name]++
-				}
-			}
-		}
-	case Completed:
-		for stat := range m.queue.JobStats(ctx) {
-			if stat.InProgress {
-				job, ok := m.queue.Get(ctx, stat.ID)
-				if ok {
-					counters[job.Type().Name]++
-				}
-			}
-		}
-	case All:
-		for stat := range m.queue.JobStats(ctx) {
-			job, ok := m.queue.Get(ctx, stat.ID)
-			if ok {
-				counters[job.Type().Name]++
-			}
-		}
+		counters[info.Type.Name]++
 	}
 
-	out := JobStatusReport{}
-
+	var out []JobTypeCount
 	for jt, num := range counters {
-		out.Stats = append(out.Stats, JobCounters{
-			ID:    jt,
+		out = append(out, JobTypeCount{
+			Type:  jt,
 			Count: num,
 		})
 	}
 
-	out.Filter = string(f)
-
-	return &out, nil
+	return out, nil
 }
 
-func (m *queueManager) RecentTiming(ctx context.Context, window time.Duration, f RuntimeFilter) (*JobRuntimeReport, error) {
+func (m *queueManager) JobIDsByState(ctx context.Context, jobType string, f StatusFilter) ([]GroupedID, error) {
 	var err error
-
 	if err = f.Validate(); err != nil {
-		return nil, errors.WithStack(err)
+		return nil, errors.Wrap(err, "invalid filter")
 	}
 
-	if window <= time.Second {
-		return nil, errors.New("must specify windows greater than one second")
+	uniqueIDs := map[string]struct{}{}
+	for info := range m.queue.JobInfo(ctx) {
+		if info.Type.Name != jobType {
+			continue
+		}
+
+		if !m.matchesStatusFilter(info, f) {
+			continue
+		}
+
+		uniqueIDs[info.ID] = struct{}{}
 	}
 
-	counters := map[string][]time.Duration{}
-
-	var cancel context.CancelFunc
-	ctx, cancel = context.WithCancel(ctx)
-	defer cancel()
-
-	switch f {
-	case Duration:
-		for job := range m.queue.Results(ctx) {
-			stat := job.Status()
-			ti := job.TimeInfo()
-			if stat.Completed && time.Since(ti.End) < window {
-				jt := job.Type().Name
-				counters[jt] = append(counters[jt], ti.End.Sub(ti.Start))
-			}
-		}
-	case Latency:
-		for stat := range m.queue.JobStats(ctx) {
-			job, ok := m.queue.Get(ctx, stat.ID)
-			if !ok {
-				continue
-			}
-			ti := job.TimeInfo()
-			if !stat.Completed && time.Since(ti.End) < window {
-				jt := job.Type().Name
-				counters[jt] = append(counters[jt], time.Since(ti.Created))
-			}
-		}
-	case Running:
-		for stat := range m.queue.JobStats(ctx) {
-			if !stat.Completed && stat.InProgress {
-				job, ok := m.queue.Get(ctx, stat.ID)
-				if !ok {
-					continue
-				}
-				ti := job.TimeInfo()
-				jt := job.Type().Name
-				counters[jt] = append(counters[jt], time.Since(ti.Start))
-			}
-		}
-	default:
-		return nil, errors.New("invalid job runtime filter")
+	var ids []GroupedID
+	for id := range uniqueIDs {
+		ids = append(ids, GroupedID{ID: id})
 	}
 
-	runtimes := []JobRuntimes{}
-
-	for k, v := range counters {
-		var total time.Duration
-		for _, i := range v {
-			total += i
-		}
-
-		runtimes = append(runtimes, JobRuntimes{
-			ID:       k,
-			Duration: total / time.Duration(len(v)),
-		})
-	}
-
-	return &JobRuntimeReport{
-		Filter: string(f),
-		Period: window,
-		Stats:  runtimes,
-	}, nil
+	return ids, nil
 }
 
-func (m *queueManager) JobIDsByState(ctx context.Context, jobType string, f StatusFilter) (*JobReportIDs, error) {
-	var err error
-	if err = f.Validate(); err != nil {
-		return nil, errors.WithStack(err)
-	}
-
-	// it might be the case that we shold use something with
-	// set-ish properties if queues return the same job more than
-	// once, and it poses a problem.
-	var ids []string
-
-	var cancel context.CancelFunc
-	ctx, cancel = context.WithCancel(ctx)
-	defer cancel()
-
+// matchesStatusFilter returns whether or not a job's information matches the
+// given job status filter.
+func (m *queueManager) matchesStatusFilter(info amboy.JobInfo, f StatusFilter) bool {
 	switch f {
-	case InProgress:
-		for stat := range m.queue.JobStats(ctx) {
-			if jobType != "" {
-				job, ok := m.queue.Get(ctx, stat.ID)
-				if !ok && job.Type().Name != jobType {
-					continue
-				}
-			}
-			if !stat.Completed && stat.InProgress {
-				ids = append(ids, stat.ID)
-			}
-		}
 	case Pending:
-		for stat := range m.queue.JobStats(ctx) {
-			if jobType != "" {
-				job, ok := m.queue.Get(ctx, stat.ID)
-				if !ok && job.Type().Name != jobType {
-					continue
-				}
-			}
-			if !stat.Completed && !stat.InProgress {
-				ids = append(ids, stat.ID)
-			}
-		}
+		return !info.Status.InProgress && !info.Status.Completed
+	case InProgress:
+		return info.Status.InProgress
 	case Stale:
-		for stat := range m.queue.JobStats(ctx) {
-			if jobType != "" {
-				job, ok := m.queue.Get(ctx, stat.ID)
-				if !ok && job.Type().Name != jobType {
-					continue
-				}
-			}
-			if !stat.Completed && stat.InProgress && time.Since(stat.ModificationTime) > m.queue.Info().LockTimeout {
-				ids = append(ids, stat.ID)
-			}
-		}
+		return info.Status.InProgress && time.Since(info.Status.ModificationTime) > m.queue.Info().LockTimeout
 	case Completed:
-		for stat := range m.queue.JobStats(ctx) {
-			if jobType != "" {
-				job, ok := m.queue.Get(ctx, stat.ID)
-				if !ok && job.Type().Name != jobType {
-					continue
-				}
-			}
-			if stat.Completed {
-				ids = append(ids, stat.ID)
-			}
-		}
+		return info.Status.Completed
+	case Retrying:
+		return info.Status.Completed && info.Retry.Retryable && info.Retry.NeedsRetry
+	case StaleRetrying:
+		return info.Status.Completed && info.Retry.Retryable && info.Retry.NeedsRetry && time.Since(info.Status.ModificationTime) > m.queue.Info().LockTimeout
+	case All:
+		return true
 	default:
-		return nil, errors.New("invalid job status filter")
+		return false
 	}
-
-	return &JobReportIDs{
-		Filter: string(f),
-		Type:   jobType,
-		IDs:    ids,
-	}, nil
 }
 
-func (m *queueManager) RecentErrors(ctx context.Context, window time.Duration, f ErrorFilter) (*JobErrorsReport, error) {
-	var err error
-	if err = f.Validate(); err != nil {
-		return nil, errors.WithStack(err)
+// getJob resolves a job's information into the job that supplied the
+// information.
+func (m *queueManager) getJob(ctx context.Context, info amboy.JobInfo) (amboy.Job, error) {
+	if info.Retry.Retryable {
+		var j amboy.Job
+		var err error
+		isRetryable := amboy.WithRetryableQueue(m.queue, func(rq amboy.RetryableQueue) {
+			j, err = rq.GetAttempt(ctx, info.ID, info.Retry.CurrentAttempt)
+		})
 
-	}
-	if window <= time.Second {
-		return nil, errors.New("must specify windows greater than one second")
-	}
-
-	collector := map[string]JobErrorsForType{}
-
-	var cancel context.CancelFunc
-	ctx, cancel = context.WithCancel(ctx)
-	defer cancel()
-
-	switch f {
-	case UniqueErrors:
-		for stat := range m.queue.JobStats(ctx) {
-			if stat.Completed && stat.ErrorCount > 0 {
-				job, ok := m.queue.Get(ctx, stat.ID)
-				if !ok {
-					continue
-				}
-
-				ti := job.TimeInfo()
-				if time.Since(ti.End) > window {
-					continue
-				}
-				jt := job.Type().Name
-
-				val := collector[jt]
-
-				val.Count++
-				val.Total += stat.ErrorCount
-				val.Errors = append(val.Errors, stat.Errors...)
-				collector[jt] = val
-			}
+		// If the queue is retryable, return the result immediately. Otherwise,
+		// if it's not a retryable queue, then a retryable job is treated no
+		// differently from a non-retryable job (i.e. it's not retried).
+		if isRetryable {
+			return j, err
 		}
-		for k, v := range collector {
-			errs := map[string]struct{}{}
-
-			for _, e := range v.Errors {
-				errs[e] = struct{}{}
-			}
-
-			v.Errors = []string{}
-			for e := range errs {
-				v.Errors = append(v.Errors, e)
-			}
-
-			collector[k] = v
-		}
-	case AllErrors:
-		for stat := range m.queue.JobStats(ctx) {
-			if stat.Completed && stat.ErrorCount > 0 {
-				job, ok := m.queue.Get(ctx, stat.ID)
-				if !ok {
-					continue
-				}
-
-				ti := job.TimeInfo()
-				if time.Since(ti.End) > window {
-					continue
-				}
-				jt := job.Type().Name
-
-				val := collector[jt]
-
-				val.Count++
-				val.Total += stat.ErrorCount
-				val.Errors = append(val.Errors, stat.Errors...)
-				collector[jt] = val
-			}
-		}
-	case StatsOnly:
-		for stat := range m.queue.JobStats(ctx) {
-			if stat.Completed && stat.ErrorCount > 0 {
-				job, ok := m.queue.Get(ctx, stat.ID)
-				if !ok {
-					continue
-				}
-
-				ti := job.TimeInfo()
-				if time.Since(ti.End) > window {
-					continue
-				}
-				jt := job.Type().Name
-
-				val := collector[jt]
-
-				val.Count++
-				val.Total += stat.ErrorCount
-				collector[jt] = val
-			}
-		}
-	default:
-		return nil, errors.New("operation is not supported")
 	}
 
-	var reports []JobErrorsForType
-
-	for k, v := range collector {
-		v.ID = k
-		v.Average = float64(v.Total / v.Count)
-
-		reports = append(reports, v)
+	j, ok := m.queue.Get(ctx, info.ID)
+	if !ok {
+		return j, errors.New("could not find job")
 	}
-
-	return &JobErrorsReport{
-		Period:         window,
-		FilteredByType: false,
-		Data:           reports,
-	}, nil
-}
-
-func (m *queueManager) RecentJobErrors(ctx context.Context, jobType string, window time.Duration, f ErrorFilter) (*JobErrorsReport, error) {
-	var err error
-	if err = f.Validate(); err != nil {
-		return nil, errors.WithStack(err)
-
-	}
-	if window <= time.Second {
-		return nil, errors.New("must specify windows greater than one second")
-	}
-
-	collector := map[string]JobErrorsForType{}
-
-	var cancel context.CancelFunc
-	ctx, cancel = context.WithCancel(ctx)
-	defer cancel()
-
-	switch f {
-	case UniqueErrors:
-		for stat := range m.queue.JobStats(ctx) {
-			if stat.Completed && stat.ErrorCount > 0 {
-				job, ok := m.queue.Get(ctx, stat.ID)
-				if !ok {
-					continue
-				}
-				if job.Type().Name != jobType {
-					continue
-				}
-
-				ti := job.TimeInfo()
-				if time.Since(ti.End) > window {
-					continue
-				}
-
-				val := collector[jobType]
-
-				val.Count++
-				val.Total += stat.ErrorCount
-				val.Errors = append(val.Errors, stat.Errors...)
-				collector[jobType] = val
-			}
-		}
-		for k, v := range collector {
-			errs := map[string]struct{}{}
-
-			for _, e := range v.Errors {
-				errs[e] = struct{}{}
-			}
-
-			v.Errors = []string{}
-			for e := range errs {
-				v.Errors = append(v.Errors, e)
-			}
-
-			collector[k] = v
-		}
-	case AllErrors:
-		for stat := range m.queue.JobStats(ctx) {
-			if stat.Completed && stat.ErrorCount > 0 {
-				job, ok := m.queue.Get(ctx, stat.ID)
-				if !ok {
-					continue
-				}
-				if job.Type().Name != jobType {
-					continue
-				}
-
-				ti := job.TimeInfo()
-				if time.Since(ti.End) > window {
-					continue
-				}
-
-				val := collector[jobType]
-
-				val.Count++
-				val.Total += stat.ErrorCount
-				val.Errors = append(val.Errors, stat.Errors...)
-				collector[jobType] = val
-			}
-		}
-	case StatsOnly:
-		for stat := range m.queue.JobStats(ctx) {
-			if stat.Completed && stat.ErrorCount > 0 {
-				job, ok := m.queue.Get(ctx, stat.ID)
-				if !ok {
-					continue
-				}
-				if job.Type().Name != jobType {
-					continue
-				}
-
-				ti := job.TimeInfo()
-				if time.Since(ti.End) > window {
-					continue
-				}
-
-				val := collector[jobType]
-
-				val.Count++
-				val.Total += stat.ErrorCount
-				collector[jobType] = val
-			}
-		}
-	default:
-		return nil, errors.New("operation is not supported")
-	}
-
-	var reports []JobErrorsForType
-
-	for k, v := range collector {
-		v.ID = k
-		v.Average = float64(v.Total / v.Count)
-
-		reports = append(reports, v)
-	}
-
-	return &JobErrorsReport{
-		Period:         window,
-		FilteredByType: true,
-		Data:           reports,
-	}, nil
+	return j, nil
 
 }
 
-func (m *queueManager) CompleteJob(ctx context.Context, name string) error {
-	j, exists := m.queue.Get(ctx, name)
-	if !exists {
-		return errors.Errorf("cannot recover job with name '%s'", name)
+// CompleteJob marks a job complete by ID. The ID matches the logical job ID
+// rather than the internally-stored job ID.
+func (m *queueManager) CompleteJob(ctx context.Context, id string) error {
+	j, ok := m.queue.Get(ctx, id)
+	if !ok {
+		return errors.Errorf("cannot recover job with ID '%s'", id)
 	}
 
-	m.queue.Complete(ctx, j)
-	return nil
+	return m.completeJob(ctx, j)
 }
 
+// CompleteJobsByType marks all jobs complete that match the status filter and
+// job type.
 func (m *queueManager) CompleteJobsByType(ctx context.Context, f StatusFilter, jobType string) error {
 	if err := f.Validate(); err != nil {
-		return errors.WithStack(err)
+		return errors.Wrap(err, "invalid filter")
 	}
 
-	if f == Completed {
-		return errors.New("invalid specification of completed job type")
-	}
-
-	for stat := range m.queue.JobStats(ctx) {
-		job, ok := m.queue.Get(ctx, stat.ID)
-		if ok && job.Type().Name != jobType {
+	catcher := grip.NewBasicCatcher()
+	for info := range m.queue.JobInfo(ctx) {
+		if info.Type.Name != jobType {
 			continue
 		}
 
-		switch f {
-		case Stale:
-			if !stat.InProgress || time.Since(stat.ModificationTime) < m.queue.Info().LockTimeout {
-				continue
-			}
-		case InProgress:
-			if !stat.InProgress {
-				continue
-			}
-		case All, Pending:
-			// pass: (because there's no fallthrough
-			// everything else should be in progress)
-			if stat.Completed {
-				continue
-			}
-		default:
-			// futureproofing...
+		if !m.matchesStatusFilter(info, f) {
 			continue
 		}
 
-		m.queue.Complete(ctx, job)
+		j, err := m.getJob(ctx, info)
+		if err != nil {
+			catcher.Wrapf(err, "getting job '%s' from info", info.ID)
+			continue
+		}
+
+		catcher.Wrapf(m.completeJob(ctx, j), "marking job '%s' complete", j.ID())
 	}
 
-	return nil
+	return catcher.Resolve()
 }
 
+func (m *queueManager) completeJob(ctx context.Context, j amboy.Job) error {
+	if err := m.queue.Complete(ctx, j); err != nil {
+		return errors.Wrap(err, "completing job")
+	}
+
+	var err error
+	amboy.WithRetryableQueue(m.queue, func(rq amboy.RetryableQueue) {
+		err = rq.CompleteRetrying(ctx, j)
+	})
+
+	return errors.Wrap(err, "marking retryable job as complete")
+}
+
+// CompleteJobs marks all jobs complete that match the status filter.
 func (m *queueManager) CompleteJobs(ctx context.Context, f StatusFilter) error {
 	if err := f.Validate(); err != nil {
-		return errors.WithStack(err)
-	}
-	if f == Completed {
-		return errors.New("invalid specification of completed job type")
+		return errors.Wrap(err, "invalid filter")
 	}
 
-	for stat := range m.queue.JobStats(ctx) {
-		if stat.Completed {
+	catcher := grip.NewBasicCatcher()
+	for info := range m.queue.JobInfo(ctx) {
+		if !m.matchesStatusFilter(info, f) {
 			continue
 		}
 
-		switch f {
-		case Stale:
-			if stat.InProgress && time.Since(stat.ModificationTime) > m.queue.Info().LockTimeout {
-				continue
-			}
-		case InProgress:
-			if !stat.InProgress {
-				continue
-			}
-		case Pending:
-			if stat.InProgress {
-				continue
-			}
-		case All:
-			// pass
-		default:
-			// futureproofing...
+		j, err := m.getJob(ctx, info)
+		if err != nil {
+			catcher.Wrapf(err, "getting job '%s' from info", info.ID)
 			continue
 		}
 
-		job, ok := m.queue.Get(ctx, stat.ID)
-		if !ok {
-			continue
-		}
-
-		m.queue.Complete(ctx, job)
+		catcher.Wrapf(m.completeJob(ctx, j), "marking job '%s' complete", j.ID())
 	}
 
-	return nil
+	return catcher.Resolve()
+}
+
+// CompleteJobsByPattern marks all jobs complete that match the status filter
+// and pattern. Patterns should be in Perl compatible regular expression syntax
+// (https://golang.org/pkg/regexp) and match logical job IDs rather than
+// internally-stored job IDs.
+func (m *queueManager) CompleteJobsByPattern(ctx context.Context, f StatusFilter, pattern string) error {
+	if err := f.Validate(); err != nil {
+		return errors.Wrap(err, "invalid filter")
+	}
+
+	regex, err := regexp.Compile(pattern)
+	if err != nil {
+		return errors.Wrap(err, "invalid regexp")
+	}
+
+	catcher := grip.NewBasicCatcher()
+	for info := range m.queue.JobInfo(ctx) {
+		if !regex.MatchString(info.ID) {
+			continue
+		}
+
+		if !m.matchesStatusFilter(info, f) {
+			continue
+		}
+
+		j, err := m.getJob(ctx, info)
+		if err != nil {
+			catcher.Wrapf(err, "could not get job '%s' from info", info.ID)
+			continue
+		}
+
+		catcher.Wrapf(m.completeJob(ctx, j), "marking job '%s' complete", j.ID())
+	}
+
+	return catcher.Resolve()
 }

@@ -2,7 +2,6 @@ package rest
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/evergreen-ci/gimlet"
 	"github.com/mongodb/amboy/management"
@@ -30,19 +29,17 @@ func (s *ManagementService) App() *gimlet.APIApp {
 	app := gimlet.NewApp()
 
 	app.AddRoute("/status/{filter}").Version(1).Get().Handler(s.GetJobStatus)
-	app.AddRoute("/status/{filter}/{type}").Version(1).Get().Handler(s.GetJobStatusByType)
-	app.AddRoute("/timing/{filter}/{seconds}").Version(1).Get().Handler(s.GetRecentTimings)
-	app.AddRoute("/errors/{filter}/{seconds}").Version(1).Get().Handler(s.GetRecentErrors)
-	app.AddRoute("/errors/{filter}/{type}/{seconds}").Version(1).Get().Handler(s.GetRecentErrorsByType)
-	app.AddRoute("/jobs/mark_complete/{name}").Version(1).Post().Handler(s.MarkComplete)
-	app.AddRoute("/jobs/mark_complete_by_type/{type}/{filter}").Version(1).Post().Handler(s.MarkCompleteByType)
-	app.AddRoute("/jobs/mark_many_complete/{filter}").Version(1).Post().Handler(s.MarkManyComplete)
+	app.AddRoute("/id/status/{filter}/type/{type}").Version(1).Get().Handler(s.GetJobIDs)
+	app.AddRoute("/jobs/mark_complete/id/{name}").Version(1).Post().Handler(s.MarkComplete)
+	app.AddRoute("/jobs/mark_complete/status/{filter}").Version(1).Post().Handler(s.MarkManyComplete)
+	app.AddRoute("/jobs/mark_complete/status/{filter}/type/{type}").Version(1).Post().Handler(s.MarkCompleteByType)
+	app.AddRoute("/jobs/mark_complete/status/{filter}/pattern/{pattern}").Version(1).Post().Handler(s.MarkCompleteByPattern)
 
 	return app
 }
 
-// GetJobStatus is an http.HandlerFunc that provides access to counts
-// of all jobs that match a defined filter.
+// GetJobStatus is an http.HandlerFunc that counts all jobs that match a status
+// filter.
 func (s *ManagementService) GetJobStatus(rw http.ResponseWriter, r *http.Request) {
 	filter := management.StatusFilter(gimlet.GetVars(r)["filter"])
 	ctx := r.Context()
@@ -55,16 +52,16 @@ func (s *ManagementService) GetJobStatus(rw http.ResponseWriter, r *http.Request
 
 	data, err := s.manager.JobStatus(ctx, filter)
 	if err != nil {
-		gimlet.WriteResponse(rw, gimlet.MakeJSONErrorResponder(err))
+		gimlet.WriteResponse(rw, gimlet.MakeJSONInternalErrorResponder(err))
 		return
 	}
 
 	gimlet.WriteJSON(rw, data)
 }
 
-// GetJobStatusByType is an http.HandlerFunc that produces a list of job IDs for
-// jobs that match a defined filter.
-func (s *ManagementService) GetJobStatusByType(rw http.ResponseWriter, r *http.Request) {
+// GetJobIDs is an http.HandlerFunc that produces a list of job IDs for jobs
+// that match a status filter and job type.
+func (s *ManagementService) GetJobIDs(rw http.ResponseWriter, r *http.Request) {
 	vars := gimlet.GetVars(r)
 	filter := management.StatusFilter(vars["filter"])
 	jobType := vars["type"]
@@ -77,93 +74,7 @@ func (s *ManagementService) GetJobStatusByType(rw http.ResponseWriter, r *http.R
 	ctx := r.Context()
 	data, err := s.manager.JobIDsByState(ctx, jobType, filter)
 	if err != nil {
-		gimlet.WriteResponse(rw, gimlet.MakeJSONErrorResponder(err))
-		return
-	}
-
-	gimlet.WriteJSON(rw, data)
-}
-
-// GetRecentTimings is an http.HandlerFunc that produces a report that lists the average runtime
-// (duration) or latency of jobs.
-func (s *ManagementService) GetRecentTimings(rw http.ResponseWriter, r *http.Request) {
-	vars := gimlet.GetVars(r)
-	dur, err := time.ParseDuration(vars["seconds"])
-	if err != nil {
-		gimlet.WriteResponse(rw, gimlet.MakeJSONErrorResponder(errors.Wrapf(err,
-			"problem parsing duration from %s", vars["seconds"])))
-		return
-	}
-
-	filter := management.RuntimeFilter(vars["filter"])
-	if err = filter.Validate(); err != nil {
-		gimlet.WriteResponse(rw, gimlet.MakeJSONErrorResponder(err))
-		return
-	}
-
-	ctx := r.Context()
-	data, err := s.manager.RecentTiming(ctx, dur, filter)
-	if err != nil {
-		gimlet.WriteResponse(rw, gimlet.MakeJSONErrorResponder(err))
-		return
-	}
-
-	gimlet.WriteJSON(rw, data)
-}
-
-// GetRecentErrors is an http.HandlerFunc that returns an error report
-// including number of errors, total number of jobs, grouped by type,
-// with the error messages. Uses a filter that can optionally remove
-// duplicate errors.
-func (s *ManagementService) GetRecentErrors(rw http.ResponseWriter, r *http.Request) {
-	vars := gimlet.GetVars(r)
-
-	dur, err := time.ParseDuration(vars["seconds"])
-	if err != nil {
-		gimlet.WriteResponse(rw, gimlet.MakeJSONErrorResponder(errors.Wrapf(err,
-			"problem parsing duration from %s", vars["seconds"])))
-		return
-	}
-
-	filter := management.ErrorFilter(vars["filter"])
-	if err = filter.Validate(); err != nil {
-		gimlet.WriteResponse(rw, gimlet.MakeJSONErrorResponder(err))
-		return
-	}
-
-	ctx := r.Context()
-	data, err := s.manager.RecentErrors(ctx, dur, filter)
-	if err != nil {
-		gimlet.WriteResponse(rw, gimlet.MakeJSONErrorResponder(err))
-		return
-	}
-
-	gimlet.WriteJSON(rw, data)
-}
-
-// GetRecentErrorsByType is an http.Handlerfunc returns an errors report for
-// only a single type of jobs.
-func (s *ManagementService) GetRecentErrorsByType(rw http.ResponseWriter, r *http.Request) {
-	vars := gimlet.GetVars(r)
-	jobType := vars["type"]
-
-	dur, err := time.ParseDuration(vars["seconds"])
-	if err != nil {
-		gimlet.WriteResponse(rw, gimlet.MakeJSONErrorResponder(errors.Wrapf(err,
-			"problem parsing duration from %s", vars["seconds"])))
-		return
-	}
-
-	filter := management.ErrorFilter(vars["filter"])
-	if err = filter.Validate(); err != nil {
-		gimlet.WriteResponse(rw, gimlet.MakeJSONErrorResponder(err))
-		return
-	}
-
-	ctx := r.Context()
-	data, err := s.manager.RecentJobErrors(ctx, jobType, dur, filter)
-	if err != nil {
-		gimlet.WriteResponse(rw, gimlet.MakeJSONErrorResponder(err))
+		gimlet.WriteResponse(rw, gimlet.MakeJSONInternalErrorResponder(err))
 		return
 	}
 
@@ -177,8 +88,8 @@ func (s *ManagementService) MarkComplete(rw http.ResponseWriter, r *http.Request
 
 	ctx := r.Context()
 	if err := s.manager.CompleteJob(ctx, name); err != nil {
-		gimlet.WriteResponse(rw, gimlet.MakeTextErrorResponder(errors.Wrapf(err,
-			"problem complete job '%s'", name)))
+		gimlet.WriteResponse(rw, gimlet.MakeTextInternalErrorResponder(errors.Wrapf(err, "completing job '%s'", name)))
+		return
 	}
 
 	gimlet.WriteJSON(rw, struct {
@@ -199,8 +110,8 @@ func (s *ManagementService) MarkCompleteByType(rw http.ResponseWriter, r *http.R
 
 	ctx := r.Context()
 	if err := s.manager.CompleteJobsByType(ctx, management.StatusFilter(filter), jobType); err != nil {
-		gimlet.WriteResponse(rw, gimlet.MakeTextErrorResponder(errors.Wrapf(err,
-			"problem completing jobs by type '%s'", jobType)))
+		gimlet.WriteResponse(rw, gimlet.MakeTextInternalErrorResponder(errors.Wrapf(err, "completing jobs by type '%s'", jobType)))
+		return
 	}
 
 	gimlet.WriteJSON(rw, struct {
@@ -220,13 +131,33 @@ func (s *ManagementService) MarkManyComplete(rw http.ResponseWriter, r *http.Req
 
 	ctx := r.Context()
 	if err := s.manager.CompleteJobs(ctx, management.StatusFilter(filter)); err != nil {
-		gimlet.WriteResponse(rw, gimlet.MakeTextErrorResponder(errors.Wrapf(err,
-			"problem completing jobs with filter '%s'", filter)))
+		gimlet.WriteResponse(rw, gimlet.MakeTextErrorResponder(errors.Wrapf(err, "completing jobs with filter '%s'", filter)))
+		return
 	}
 
 	gimlet.WriteJSON(rw, struct {
 		Message string `json:"message"`
 	}{
-		Message: "mark jobs complete by type successful",
+		Message: "mark jobs complete by filter successful",
+	})
+}
+
+// MarkCompleteByPattern is an http.Handlerfunc marks all jobs with the
+// specified pattern and status complete.
+func (s *ManagementService) MarkCompleteByPattern(rw http.ResponseWriter, r *http.Request) {
+	vars := gimlet.GetVars(r)
+	pattern := vars["pattern"]
+	filter := vars["filter"]
+
+	ctx := r.Context()
+	if err := s.manager.CompleteJobsByPattern(ctx, management.StatusFilter(filter), pattern); err != nil {
+		gimlet.WriteResponse(rw, gimlet.MakeTextInternalErrorResponder(errors.Wrapf(err, "completing jobs by pattern '%s' with filter '%s'", pattern, filter)))
+		return
+	}
+
+	gimlet.WriteJSON(rw, struct {
+		Message string `json:"message"`
+	}{
+		Message: "mark jobs complete by pattern successful",
 	})
 }
