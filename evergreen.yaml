@@ -36,7 +36,7 @@ functions:
       working_dir: gopath/src/github.com/evergreen-ci/barque/
       binary: make
       args: ["${target}"]
-      include_expansions_in_env: ["DISABLE_COVERAGE", "GO_BIN_PATH", "GOROOT"]
+      include_expansions_in_env: ["DISABLE_COVERAGE", "GOROOT", "RACE_DETECTOR"]
       env:
         GOPATH: ${workdir}/gopath
   set-up-mongodb:
@@ -149,7 +149,6 @@ buildvariants:
     expansions:
       RACE_DETECTOR: true
       MONGODB_URL: https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-4.0.13.tgz
-      GO_BIN_PATH: /opt/golang/go1.16/bin/go
       GOROOT: /opt/golang/go1.16
     run_on:
       - archlinux-new-small
@@ -158,7 +157,6 @@ buildvariants:
   - name: lint
     display_name: Lint (Arch Linux)
     expansions:
-      GO_BIN_PATH: /opt/golang/go1.16/bin/go
       GOROOT: /opt/golang/go1.16
       DISABLE_COVERAGE: true
     run_on:
@@ -169,7 +167,6 @@ buildvariants:
     display_name: Ubuntu 18.04
     expansions:
       DISABLE_COVERAGE: true
-      GO_BIN_PATH: /opt/golang/go1.16/bin/go
       GOROOT: /opt/golang/go1.16
       MONGODB_URL: https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-4.0.13.tgz
     run_on:
@@ -180,7 +177,6 @@ buildvariants:
     display_name: macOS
     expansions:
       DISABLE_COVERAGE: true
-      GO_BIN_PATH: /opt/golang/go1.16/bin/go
       GOROOT: /opt/golang/go1.16
       MONGODB_URL: https://fastdl.mongodb.org/osx/mongodb-osx-ssl-x86_64-4.0.13.tgz
     run_on:
@@ -197,6 +193,5 @@ buildvariants:
     expansions:
       MONGODB_URL: https://fastdl.mongodb.org/win32/mongodb-win32-x86_64-2008plus-ssl-4.0.13.zip
       DISABLE_COVERAGE: true
-      GO_BIN_PATH: /cygdrive/c/golang/go1.16/bin/go
       GOROOT: C:/golang/go1.16
     tasks: [ "testGroup" ]
