@@ -24,7 +24,7 @@ imports:
   - name: github.com/urfave/cli
     version: 01857ac33766ce0c93856370626f9799281c14f4
   - name: github.com/mongodb/curator
-    version: 5b983c3bd4f11d65a4036cdc21f072a042bcb282
+    version: 440d084b03d1fc45a9462211d0d6252d54dd7f85
   - name: github.com/mholt/archiver
     version: e4ef56d48eb029648b0e895bb0b6a393ef0829c3
   - name: github.com/aws/aws-sdk-go
