@@ -10,12 +10,14 @@ package integration
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -28,39 +30,45 @@ import (
 )
 
 var (
-	localMasterKey  = []byte("2x44+xduTaBBkY16Er5DuADaghvS4vwdkg8tpPp3tz6gV01A1CwbD9itQ2HFDgPWOp8eMaC1Oi766JzXZBdBdbdMurdonJ1d")
-	keyID           = os.Getenv(awsAccessKeyID)
-	secretAccessKey = os.Getenv(awsSecretAccessKey)
+	localMasterKey = []byte("2x44+xduTaBBkY16Er5DuADaghvS4vwdkg8tpPp3tz6gV01A1CwbD9itQ2HFDgPWOp8eMaC1Oi766JzXZBdBdbdMurdonJ1d")
 )
 
 const (
 	clientEncryptionProseDir      = "../../data/client-side-encryption-prose"
 	deterministicAlgorithm        = "AEAD_AES_256_CBC_HMAC_SHA_512-Deterministic"
 	randomAlgorithm               = "AEAD_AES_256_CBC_HMAC_SHA_512-Random"
-	kvNamespace                   = "admin.datakeys" // default namespace for the key vault collection
-	keySubtype               byte = 4                // expected subtype for data keys
-	encryptedValueSubtype    byte = 6                // expected subtypes for encrypted values
-	cryptMaxBatchSizeBytes        = 2097152          // max bytes in write batch when auto encryption is enabled
-	maxBsonObjSize                = 16777216         // max bytes in BSON object
+	kvNamespace                   = "keyvault.datakeys" // default namespace for the key vault collection
+	keySubtype               byte = 4                   // expected subtype for data keys
+	encryptedValueSubtype    byte = 6                   // expected subtypes for encrypted values
+	cryptMaxBatchSizeBytes        = 2097152             // max bytes in write batch when auto encryption is enabled
+	maxBsonObjSize                = 16777216            // max bytes in BSON object
 )
 
 func TestClientSideEncryptionProse(t *testing.T) {
+	verifyClientSideEncryptionVarsSet(t)
 	mt := mtest.New(t, mtest.NewOptions().MinServerVersion("4.2").Enterprise(true).CreateClient(false))
 	defer mt.Close()
 
-	assert.NotEqual(mt, keyID, "", "%s env var not set", awsAccessKeyID)
-	assert.NotEqual(mt, secretAccessKey, "", "%s env var not set", awsSecretAccessKey)
-	defaultKvClientOptions := options.Client().ApplyURI(mt.ConnString())
+	defaultKvClientOptions := options.Client().ApplyURI(mtest.ClusterURI())
+	fullKmsProvidersMap := map[string]map[string]interface{}{
+		"aws": {
+			"accessKeyId":     awsAccessKeyID,
+			"secretAccessKey": awsSecretAccessKey,
+		},
+		"azure": {
+			"tenantId":     azureTenantID,
+			"clientId":     azureClientID,
+			"clientSecret": azureClientSecret,
+		},
+		"gcp": {
+			"email":      gcpEmail,
+			"privateKey": gcpPrivateKey,
+		},
+		"local": {"key": localMasterKey},
+	}
 
 	mt.RunOpts("data key and double encryption", noClientOpts, func(mt *mtest.T) {
 		// set up options structs
-		kmsProviders := map[string]map[string]interface{}{
-			"aws": {
-				"accessKeyId":     keyID,
-				"secretAccessKey": secretAccessKey,
-			},
-			"local": {"key": localMasterKey},
-		}
 		schema := bson.D{
 			{"bsonType", "object"},
 			{"properties", bson.D{
@@ -74,38 +82,52 @@ func TestClientSideEncryptionProse(t *testing.T) {
 			}},
 		}
 		schemaMap := map[string]interface{}{"db.coll": schema}
-		aeo := options.AutoEncryption().SetKmsProviders(kmsProviders).SetKeyVaultNamespace(kvNamespace).SetSchemaMap(schemaMap)
-		ceo := options.ClientEncryption().SetKmsProviders(kmsProviders).SetKeyVaultNamespace(kvNamespace)
+		aeo := options.AutoEncryption().
+			SetKmsProviders(fullKmsProvidersMap).
+			SetKeyVaultNamespace(kvNamespace).
+			SetSchemaMap(schemaMap)
+		ceo := options.ClientEncryption().
+			SetKmsProviders(fullKmsProvidersMap).
+			SetKeyVaultNamespace(kvNamespace)
 
 		awsMasterKey := bson.D{
 			{"region", "us-east-1"},
 			{"key", "arn:aws:kms:us-east-1:579766882180:key/89fcc2c4-08b0-4bd9-9f25-e30687b580d0"},
 		}
+		azureMasterKey := bson.D{
+			{"keyVaultEndpoint", "key-vault-csfle.vault.azure.net"},
+			{"keyName", "key-name-csfle"},
+		}
+		gcpMasterKey := bson.D{
+			{"projectId", "devprod-drivers"},
+			{"location", "global"},
+			{"keyRing", "key-ring-csfle"},
+			{"keyName", "key-name-csfle"},
+		}
 		testCases := []struct {
-			name       string
-			provider   string
-			keyAltName string
-			masterKey  interface{}
-			value      string
+			provider  string
+			masterKey interface{}
 		}{
-			{"local", "local", "local_altname", nil, "hello local"},
-			{"aws", "aws", "aws_altname", awsMasterKey, "hello aws"},
+			{"local", nil},
+			{"aws", awsMasterKey},
+			{"azure", azureMasterKey},
+			{"gcp", gcpMasterKey},
 		}
 		for _, tc := range testCases {
-			mt.Run(tc.name, func(mt *mtest.T) {
+			mt.Run(tc.provider, func(mt *mtest.T) {
 				var startedEvents []*event.CommandStartedEvent
 				monitor := &event.CommandMonitor{
 					Started: func(_ context.Context, evt *event.CommandStartedEvent) {
 						startedEvents = append(startedEvents, evt)
 					},
 				}
-				kvClientOpts := options.Client().ApplyURI(mt.ConnString()).SetMonitor(monitor)
+				kvClientOpts := options.Client().ApplyURI(mtest.ClusterURI()).SetMonitor(monitor)
 				cpt := setup(mt, aeo, kvClientOpts, ceo)
 				defer cpt.teardown(mt)
 
 				// create data key
-				altNames := []string{tc.keyAltName}
-				dataKeyOpts := options.DataKey().SetKeyAltNames(altNames)
+				keyAltName := fmt.Sprintf("%s_altname", tc.provider)
+				dataKeyOpts := options.DataKey().SetKeyAltNames([]string{keyAltName})
 				if tc.masterKey != nil {
 					dataKeyOpts.SetMasterKey(tc.masterKey)
 				}
@@ -132,7 +154,8 @@ func TestClientSideEncryptionProse(t *testing.T) {
 				assert.Equal(mt, "majority", wString, "expected write concern 'majority', got %v", wString)
 
 				// encrypt a value with the new key by ID
-				rawVal := bson.RawValue{Type: bson.TypeString, Value: bsoncore.AppendString(nil, tc.value)}
+				valueToEncrypt := fmt.Sprintf("hello %s", tc.provider)
+				rawVal := bson.RawValue{Type: bson.TypeString, Value: bsoncore.AppendString(nil, valueToEncrypt)}
 				encrypted, err := cpt.clientEnc.Encrypt(mtest.Background, rawVal,
 					options.Encrypt().SetAlgorithm(deterministicAlgorithm).SetKeyID(dataKeyID))
 				assert.Nil(mt, err, "Encrypt error while encrypting value by ID: %v", err)
@@ -147,11 +170,11 @@ func TestClientSideEncryptionProse(t *testing.T) {
 				resBytes, err := cpt.cseColl.FindOne(mtest.Background, bson.D{{"_id", tc.provider}}).DecodeBytes()
 				assert.Nil(mt, err, "Find error: %v", err)
 				foundVal := resBytes.Lookup("value").StringValue()
-				assert.Equal(mt, tc.value, foundVal, "expected value %v, got %v", tc.value, foundVal)
+				assert.Equal(mt, valueToEncrypt, foundVal, "expected value %v, got %v", valueToEncrypt, foundVal)
 
 				// encrypt a value with an alternate name for the new key
 				altEncrypted, err := cpt.clientEnc.Encrypt(mtest.Background, rawVal,
-					options.Encrypt().SetAlgorithm(deterministicAlgorithm).SetKeyAltName(tc.keyAltName))
+					options.Encrypt().SetAlgorithm(deterministicAlgorithm).SetKeyAltName(keyAltName))
 				assert.Nil(mt, err, "Encrypt error while encrypting value by alt key name: %v", err)
 				assert.Equal(mt, encryptedValueSubtype, altEncrypted.Subtype,
 					"expected encrypted value subtype %v, got %v", encryptedValueSubtype, altEncrypted.Subtype)
@@ -187,7 +210,7 @@ func TestClientSideEncryptionProse(t *testing.T) {
 				kvClientOpts := defaultKvClientOptions
 
 				if tc.externalVault {
-					externalKvOpts := options.Client().ApplyURI(mt.ConnString()).SetAuth(options.Credential{
+					externalKvOpts := options.Client().ApplyURI(mtest.ClusterURI()).SetAuth(options.Credential{
 						Username: "fake-user",
 						Password: "fake-password",
 					})
@@ -348,33 +371,30 @@ func TestClientSideEncryptionProse(t *testing.T) {
 			"expected error '%v' to contain substring '%v'", errStr, viewErrSubstr)
 	})
 	mt.RunOpts("corpus", noClientOpts, func(mt *mtest.T) {
-		kmsProviders := map[string]map[string]interface{}{
-			"aws": {
-				"accessKeyId":     keyID,
-				"secretAccessKey": secretAccessKey,
-			},
-			"local": {"key": localMasterKey},
-		}
 		corpusSchema := readJSONFile(mt, "corpus-schema.json")
-		aeoWithoutSchema := options.AutoEncryption().SetKmsProviders(kmsProviders).SetKeyVaultNamespace(kvNamespace)
 		localSchemaMap := map[string]interface{}{
 			"db.coll": corpusSchema,
 		}
-		aeoWithSchema := options.AutoEncryption().SetKmsProviders(kmsProviders).SetKeyVaultNamespace(kvNamespace).
-			SetSchemaMap(localSchemaMap)
+		getBaseAutoEncryptionOpts := func() *options.AutoEncryptionOptions {
+			return options.AutoEncryption().
+				SetKmsProviders(fullKmsProvidersMap).
+				SetKeyVaultNamespace(kvNamespace)
+		}
 
 		testCases := []struct {
 			name   string
 			aeo    *options.AutoEncryptionOptions
 			schema bson.Raw // the schema to create the collection. if nil, the collection won't be explicitly created
 		}{
-			{"remote schema", aeoWithoutSchema, corpusSchema},
-			{"local schema", aeoWithSchema, nil},
+			{"remote schema", getBaseAutoEncryptionOpts(), corpusSchema},
+			{"local schema", getBaseAutoEncryptionOpts().SetSchemaMap(localSchemaMap), nil},
 		}
 
 		for _, tc := range testCases {
 			mt.Run(tc.name, func(mt *mtest.T) {
-				ceo := options.ClientEncryption().SetKmsProviders(kmsProviders).SetKeyVaultNamespace(kvNamespace)
+				ceo := options.ClientEncryption().
+					SetKmsProviders(fullKmsProvidersMap).
+					SetKeyVaultNamespace(kvNamespace)
 				cpt := setup(mt, tc.aeo, defaultKvClientOptions, ceo)
 				defer cpt.teardown(mt)
 
@@ -390,18 +410,14 @@ func TestClientSideEncryptionProse(t *testing.T) {
 					assert.Nil(mt, err, "create error with validator: %v", err)
 				}
 
-				localKeyFile := readJSONFile(mt, "corpus-key-local.json")
-				awsKeyFile := readJSONFile(mt, "corpus-key-aws.json")
-				// manually insert local and AWS keys into key vault
+				// Manually insert keys for each KMS provider into the key vault.
 				_, err := cpt.keyVaultColl.InsertMany(mtest.Background, []interface{}{
-					localKeyFile,
-					awsKeyFile,
+					readJSONFile(mt, "corpus-key-local.json"),
+					readJSONFile(mt, "corpus-key-aws.json"),
+					readJSONFile(mt, "corpus-key-azure.json"),
+					readJSONFile(mt, "corpus-key-gcp.json"),
 				})
 				assert.Nil(mt, err, "InsertMany error for key vault: %v", err)
-				sub, data := localKeyFile.Lookup("_id").Binary()
-				localKey := primitive.Binary{Subtype: sub, Data: data}
-				sub, data = awsKeyFile.Lookup("_id").Binary()
-				awsKey := primitive.Binary{Subtype: sub, Data: data}
 
 				// read original corpus and recursively copy over each value to new corpus, encrypting certain values
 				// when needed
@@ -409,41 +425,64 @@ func TestClientSideEncryptionProse(t *testing.T) {
 				cidx, copied := bsoncore.AppendDocumentStart(nil)
 				elems, _ := corpus.Elements()
 
+				// Keys for top-level non-document elements that should be copied directly.
+				copiedKeys := map[string]struct{}{
+					"_id":           {},
+					"altname_aws":   {},
+					"altname_local": {},
+					"altname_azure": {},
+					"altname_gcp":   {},
+				}
+
 				for _, elem := range elems {
 					key := elem.Key()
 					val := elem.Value()
 
-					// top-level non-document elements that can be copied directly
-					if key == "_id" || key == "altname_aws" || key == "altname_local" {
+					if _, ok := copiedKeys[key]; ok {
 						copied = bsoncore.AppendStringElement(copied, key, val.StringValue())
 						continue
 					}
 
-					// if method is auto, copy the value directly because it will be auto-encrypted later
 					doc := val.Document()
-					if doc.Lookup("method").StringValue() == "auto" {
+					switch method := doc.Lookup("method").StringValue(); method {
+					case "auto":
+						// Copy the value directly because it will be auto-encrypted later.
 						copied = bsoncore.AppendDocumentElement(copied, key, doc)
 						continue
+					case "explicit":
+						// Handled below.
+					default:
+						mt.Fatalf("unrecognized 'method' value %q", method)
 					}
 
 					// explicitly encrypt value
-					eo := options.Encrypt()
 					algorithm := deterministicAlgorithm
 					if doc.Lookup("algo").StringValue() == "rand" {
 						algorithm = randomAlgorithm
 					}
-					eo.SetAlgorithm(algorithm)
+					eo := options.Encrypt().SetAlgorithm(algorithm)
 
 					identifier := doc.Lookup("identifier").StringValue()
 					kms := doc.Lookup("kms").StringValue()
 					switch identifier {
 					case "id":
-						keyID := localKey
-						if kms == "aws" {
-							keyID = awsKey
+						var keyID string
+						switch kms {
+						case "local":
+							keyID = "LOCALAAAAAAAAAAAAAAAAA=="
+						case "aws":
+							keyID = "AWSAAAAAAAAAAAAAAAAAAA=="
+						case "azure":
+							keyID = "AZUREAAAAAAAAAAAAAAAAA=="
+						case "gcp":
+							keyID = "GCPAAAAAAAAAAAAAAAAAAA=="
+						default:
+							mt.Fatalf("unrecognized KMS provider %q", kms)
 						}
 
-						eo.SetKeyID(keyID)
+						keyIDBytes, err := base64.StdEncoding.DecodeString(keyID)
+						assert.Nil(mt, err, "base64 DecodeString error: %v", err)
+						eo.SetKeyID(primitive.Binary{Subtype: 4, Data: keyIDBytes})
 					case "altname":
 						eo.SetKeyAltName(kms) // alt name for a key is the same as the KMS name
 					default:
@@ -546,64 +585,117 @@ func TestClientSideEncryptionProse(t *testing.T) {
 		}
 	})
 	mt.Run("custom endpoint", func(mt *mtest.T) {
-		kmsProviders := map[string]map[string]interface{}{
+		validKmsProviders := map[string]map[string]interface{}{
 			"aws": {
-				"accessKeyId":     keyID,
-				"secretAccessKey": secretAccessKey,
+				"accessKeyId":     awsAccessKeyID,
+				"secretAccessKey": awsSecretAccessKey,
+			},
+			"azure": {
+				"tenantId":                 azureTenantID,
+				"clientId":                 azureClientID,
+				"clientSecret":             azureClientSecret,
+				"identityPlatformEndpoint": "login.microsoftonline.com:443",
+			},
+			"gcp": {
+				"email":      gcpEmail,
+				"privateKey": gcpPrivateKey,
+				"endpoint":   "oauth2.googleapis.com:443",
 			},
 		}
-		ceo := options.ClientEncryption().SetKmsProviders(kmsProviders).SetKeyVaultNamespace(kvNamespace)
-		cpt := setup(mt, nil, defaultKvClientOptions, ceo)
-		defer cpt.teardown(mt)
+		validClientEncryptionOptions := options.ClientEncryption().
+			SetKmsProviders(validKmsProviders).
+			SetKeyVaultNamespace(kvNamespace)
 
-		successKeyWithoutEndpoint := map[string]interface{}{
+		invalidKmsProviders := map[string]map[string]interface{}{
+			"azure": {
+				"tenantId":                 azureTenantID,
+				"clientId":                 azureClientID,
+				"clientSecret":             azureClientSecret,
+				"identityPlatformEndpoint": "example.com:443",
+			},
+			"gcp": {
+				"email":      gcpEmail,
+				"privateKey": gcpPrivateKey,
+				"endpoint":   "example.com:443",
+			},
+		}
+		invalidClientEncryptionOptions := options.ClientEncryption().
+			SetKmsProviders(invalidKmsProviders).
+			SetKeyVaultNamespace(kvNamespace)
+
+		awsSuccessWithoutEndpoint := map[string]interface{}{
 			"region": "us-east-1",
 			"key":    "arn:aws:kms:us-east-1:579766882180:key/89fcc2c4-08b0-4bd9-9f25-e30687b580d0",
 		}
-		successKeyWithEndpoint := map[string]interface{}{
+		awsSuccessWithEndpoint := map[string]interface{}{
 			"region":   "us-east-1",
 			"key":      "arn:aws:kms:us-east-1:579766882180:key/89fcc2c4-08b0-4bd9-9f25-e30687b580d0",
 			"endpoint": "kms.us-east-1.amazonaws.com",
 		}
-		successKeyWithEndpointHttps := map[string]interface{}{
+		awsSuccessWithHTTPSEndpoint := map[string]interface{}{
 			"region":   "us-east-1",
 			"key":      "arn:aws:kms:us-east-1:579766882180:key/89fcc2c4-08b0-4bd9-9f25-e30687b580d0",
 			"endpoint": "kms.us-east-1.amazonaws.com:443",
 		}
-		failureKeyConnectionErr := map[string]interface{}{
+		awsFailureConnectionError := map[string]interface{}{
 			"region":   "us-east-1",
 			"key":      "arn:aws:kms:us-east-1:579766882180:key/89fcc2c4-08b0-4bd9-9f25-e30687b580d0",
 			"endpoint": "kms.us-east-1.amazonaws.com:12345",
 		}
-		failureKeyWrongEndpoint := map[string]interface{}{
+		awsFailureInvalidEndpoint := map[string]interface{}{
 			"region":   "us-east-1",
 			"key":      "arn:aws:kms:us-east-1:579766882180:key/89fcc2c4-08b0-4bd9-9f25-e30687b580d0",
 			"endpoint": "kms.us-east-2.amazonaws.com",
 		}
-		failureKeyParseError := map[string]interface{}{
+		awsFailureParseError := map[string]interface{}{
 			"region":   "us-east-1",
 			"key":      "arn:aws:kms:us-east-1:579766882180:key/89fcc2c4-08b0-4bd9-9f25-e30687b580d0",
 			"endpoint": "example.com",
 		}
+		azure := map[string]interface{}{
+			"keyVaultEndpoint": "key-vault-csfle.vault.azure.net",
+			"keyName":          "key-name-csfle",
+		}
+		gcpSuccess := map[string]interface{}{
+			"projectId": "devprod-drivers",
+			"location":  "global",
+			"keyRing":   "key-ring-csfle",
+			"keyName":   "key-name-csfle",
+			"endpoint":  "cloudkms.googleapis.com:443",
+		}
+		gcpFailure := map[string]interface{}{
+			"projectId": "devprod-drivers",
+			"location":  "global",
+			"keyRing":   "key-ring-csfle",
+			"keyName":   "key-name-csfle",
+			"endpoint":  "example.com:443",
+		}
 
 		testCases := []struct {
-			name           string
-			masterKey      interface{}
-			expectError    bool
-			errorSubstring string
+			name                        string
+			provider                    string
+			masterKey                   interface{}
+			errorSubstring              string
+			testInvalidClientEncryption bool
 		}{
-			{"success without endpoint", successKeyWithoutEndpoint, false, ""},
-			{"success with endpoint", successKeyWithEndpoint, false, ""},
-			{"success with https endpoint", successKeyWithEndpointHttps, false, ""},
-			{"failure with connection error", failureKeyConnectionErr, true, "connection refused"},
-			{"failure with wrong endpoint", failureKeyWrongEndpoint, true, "us-east-1"},
-			{"failure with parse error", failureKeyParseError, true, "parse error"},
+			{"aws success without endpoint", "aws", awsSuccessWithoutEndpoint, "", false},
+			{"aws success with endpoint", "aws", awsSuccessWithEndpoint, "", false},
+			{"aws success with https endpoint", "aws", awsSuccessWithHTTPSEndpoint, "", false},
+			{"aws failure with connection error", "aws", awsFailureConnectionError, "connection refused", false},
+			{"aws failure with wrong endpoint", "aws", awsFailureInvalidEndpoint, "us-east-1", false},
+			{"aws failure with parse error", "aws", awsFailureParseError, "parse error", false},
+			{"azure success", "azure", azure, "", true},
+			{"gcp success", "gcp", gcpSuccess, "", true},
+			{"gcp failure", "gcp", gcpFailure, "Invalid KMS response", false},
 		}
 		for _, tc := range testCases {
-			mt.RunOpts(tc.name, noClientOpts, func(mt *mtest.T) {
+			mt.Run(tc.name, func(mt *mtest.T) {
+				cpt := setup(mt, nil, defaultKvClientOptions, validClientEncryptionOptions)
+				defer cpt.teardown(mt)
+
 				dkOpts := options.DataKey().SetMasterKey(tc.masterKey)
-				createdKey, err := cpt.clientEnc.CreateDataKey(mtest.Background, "aws", dkOpts)
-				if tc.expectError {
+				createdKey, err := cpt.clientEnc.CreateDataKey(mtest.Background, tc.provider, dkOpts)
+				if tc.errorSubstring != "" {
 					assert.NotNil(mt, err, "expected error, got nil")
 					errSubstr := tc.errorSubstring
 					if runtime.GOOS == "windows" && errSubstr == "connection refused" {
@@ -627,13 +719,204 @@ func TestClientSideEncryptionProse(t *testing.T) {
 				decrypted, err := cpt.clientEnc.Decrypt(mtest.Background, encrypted)
 				assert.Nil(mt, err, "Decrypt error: %v", err)
 				assert.Equal(mt, testVal, decrypted, "expected value %s, got %s", testVal, decrypted)
+
+				if !tc.testInvalidClientEncryption {
+					return
+				}
+
+				invalidClientEncryption, err := mongo.NewClientEncryption(cpt.kvClient, invalidClientEncryptionOptions)
+				assert.Nil(mt, err, "error creating invalidClientEncryption object: %v", err)
+				defer invalidClientEncryption.Close(mtest.Background)
+
+				invalidKeyOpts := options.DataKey().SetMasterKey(tc.masterKey)
+				_, err = invalidClientEncryption.CreateDataKey(mtest.Background, tc.provider, invalidKeyOpts)
+				assert.NotNil(mt, err, "expected CreateDataKey error, got nil")
+				assert.True(mt, strings.Contains(err.Error(), "parse error"),
+					"expected error %v to contain substring 'parse error'", err)
 			})
 		}
 	})
+	mt.RunOpts("bypass mongocryptd spawning", noClientOpts, func(mt *mtest.T) {
+		kmsProviders := map[string]map[string]interface{}{
+			"local": {
+				"key": localMasterKey,
+			},
+		}
+		schemaMap := map[string]interface{}{
+			"db.coll": readJSONFile(mt, "external-schema.json"),
+		}
+
+		// All mongocryptd options use port 27021 instead of the default 27020 to avoid interference with mongocryptd
+		// instances spawned by previous tests.
+		mongocryptdBypassSpawnTrue := map[string]interface{}{
+			"mongocryptdBypassSpawn": true,
+			"mongocryptdURI":         "mongodb://localhost:27021/db?serverSelectionTimeoutMS=1000",
+			"mongocryptdSpawnArgs":   []string{"--pidfilepath=bypass-spawning-mongocryptd.pid", "--port=27021"},
+		}
+		mongocryptdBypassSpawnFalse := map[string]interface{}{
+			"mongocryptdBypassSpawn": false,
+			"mongocryptdSpawnArgs":   []string{"--pidfilepath=bypass-spawning-mongocryptd.pid", "--port=27021"},
+		}
+		mongocryptdBypassSpawnNotSet := map[string]interface{}{
+			"mongocryptdSpawnArgs": []string{"--pidfilepath=bypass-spawning-mongocryptd.pid", "--port=27021"},
+		}
+
+		testCases := []struct {
+			name                    string
+			mongocryptdOpts         map[string]interface{}
+			setBypassAutoEncryption bool
+			bypassAutoEncryption    bool
+		}{
+			{"mongocryptdBypassSpawn only", mongocryptdBypassSpawnTrue, false, false},
+			{"bypassAutoEncryption only", mongocryptdBypassSpawnNotSet, true, true},
+			{"mongocryptdBypassSpawn false, bypassAutoEncryption true", mongocryptdBypassSpawnFalse, true, true},
+			{"mongocryptdBypassSpawn true, bypassAutoEncryption false", mongocryptdBypassSpawnTrue, true, false},
+		}
+		for _, tc := range testCases {
+			mt.Run(tc.name, func(mt *mtest.T) {
+				aeo := options.AutoEncryption().
+					SetKmsProviders(kmsProviders).
+					SetKeyVaultNamespace(kvNamespace).
+					SetSchemaMap(schemaMap).
+					SetExtraOptions(tc.mongocryptdOpts)
+				if tc.setBypassAutoEncryption {
+					aeo.SetBypassAutoEncryption(tc.bypassAutoEncryption)
+				}
+				cpt := setup(mt, aeo, nil, nil)
+				defer cpt.teardown(mt)
+
+				_, err := cpt.cseColl.InsertOne(mtest.Background, bson.D{{"unencrypted", "test"}})
+
+				// Check for mongocryptd server selection error if auto encryption was not bypassed.
+				if !(tc.setBypassAutoEncryption && tc.bypassAutoEncryption) {
+					assert.NotNil(mt, err, "expected InsertOne error, got nil")
+					mcryptErr, ok := err.(mongo.MongocryptdError)
+					assert.True(mt, ok, "expected error type %T, got %v of type %T", mongo.MongocryptdError{}, err, err)
+					assert.True(mt, strings.Contains(mcryptErr.Error(), "server selection error"),
+						"expected mongocryptd server selection error, got %v", err)
+					return
+				}
+
+				// If auto encryption is bypassed, the command should succeed. Create a new client to connect to
+				// mongocryptd and verify it is not running.
+				assert.Nil(mt, err, "InsertOne error: %v", err)
+
+				mcryptOpts := options.Client().ApplyURI("mongodb://localhost:27021").
+					SetServerSelectionTimeout(1 * time.Second)
+				mcryptClient, err := mongo.Connect(mtest.Background, mcryptOpts)
+				assert.Nil(mt, err, "mongocryptd Connect error: %v", err)
+
+				err = mcryptClient.Database("admin").RunCommand(mtest.Background, bson.D{{"ismaster", 1}}).Err()
+				assert.NotNil(mt, err, "expected mongocryptd ismaster error, got nil")
+				assert.True(mt, strings.Contains(err.Error(), "server selection error"),
+					"expected mongocryptd server selection error, got %v", err)
+			})
+		}
+	})
+	changeStreamOpts := mtest.NewOptions().
+		CreateClient(false).
+		Topologies(mtest.ReplicaSet)
+	mt.RunOpts("change streams", changeStreamOpts, func(mt *mtest.T) {
+		// Change streams can't easily fit into the spec test format because of their tailable nature, so there are two
+		// prose tests for them instead:
+		//
+		// 1. Auto-encryption errors for Watch operations. Collection-level change streams error because the
+		// $changeStream aggregation stage is not valid for encryption. Client and database-level streams error because
+		// only collection-level operations are valid for encryption.
+		//
+		// 2. Events are automatically decrypted: If the Watch() is done with BypassAutoEncryption=true, the Watch
+		// should succeed and subsequent getMore calls should decrypt documents when necessary.
+
+		var testConfig struct {
+			JSONSchema        bson.Raw   `bson:"json_schema"`
+			KeyVaultData      []bson.Raw `bson:"key_vault_data"`
+			EncryptedDocument bson.Raw   `bson:"encrypted_document"`
+			DecryptedDocument bson.Raw   `bson:"decrytped_document"`
+		}
+		decodeJSONFile(mt, "change-streams-test.json", &testConfig)
+
+		schemaMap := map[string]interface{}{
+			"db.coll": testConfig.JSONSchema,
+		}
+		kmsProviders := map[string]map[string]interface{}{
+			"aws": {
+				"accessKeyId":     awsAccessKeyID,
+				"secretAccessKey": awsSecretAccessKey,
+			},
+		}
+
+		testCases := []struct {
+			name       string
+			streamType mongo.StreamType
+		}{
+			{"client", mongo.ClientStream},
+			{"database", mongo.DatabaseStream},
+			{"collection", mongo.CollectionStream},
+		}
+		mt.RunOpts("auto encryption errors", noClientOpts, func(mt *mtest.T) {
+			for _, tc := range testCases {
+				mt.Run(tc.name, func(mt *mtest.T) {
+					autoEncryptionOpts := options.AutoEncryption().
+						SetKmsProviders(kmsProviders).
+						SetKeyVaultNamespace(kvNamespace).
+						SetSchemaMap(schemaMap)
+					cpt := setup(mt, autoEncryptionOpts, nil, nil)
+					defer cpt.teardown(mt)
+
+					_, err := getWatcher(mt, tc.streamType, cpt).Watch(mtest.Background, mongo.Pipeline{})
+					assert.NotNil(mt, err, "expected Watch error: %v", err)
+				})
+			}
+		})
+		mt.RunOpts("events are automatically decrypted", noClientOpts, func(mt *mtest.T) {
+			for _, tc := range testCases {
+				mt.Run(tc.name, func(mt *mtest.T) {
+					autoEncryptionOpts := options.AutoEncryption().
+						SetKmsProviders(kmsProviders).
+						SetKeyVaultNamespace(kvNamespace).
+						SetSchemaMap(schemaMap).
+						SetBypassAutoEncryption(true)
+					cpt := setup(mt, autoEncryptionOpts, nil, nil)
+					defer cpt.teardown(mt)
+
+					// Insert key vault data so the key can be accessed when starting the change stream.
+					insertDocuments(mt, cpt.keyVaultColl, testConfig.KeyVaultData)
+
+					stream, err := getWatcher(mt, tc.streamType, cpt).Watch(mtest.Background, mongo.Pipeline{})
+					assert.Nil(mt, err, "Watch error: %v", err)
+					defer stream.Close(mtest.Background)
+
+					// Insert already encrypted data and verify that it is automatically decrypted by Next().
+					insertDocuments(mt, cpt.coll, []bson.Raw{testConfig.EncryptedDocument})
+					assert.True(mt, stream.Next(mtest.Background), "expected Next to return true, got false")
+					gotDocument := stream.Current.Lookup("fullDocument").Document()
+					err = compareDocs(mt, testConfig.DecryptedDocument, gotDocument)
+					assert.Nil(mt, err, "compareDocs error: %v", err)
+				})
+			}
+		})
+	})
+}
+
+func getWatcher(mt *mtest.T, streamType mongo.StreamType, cpt *cseProseTest) watcher {
+	mt.Helper()
+
+	switch streamType {
+	case mongo.ClientStream:
+		return cpt.cseClient
+	case mongo.DatabaseStream:
+		return cpt.cseColl.Database()
+	case mongo.CollectionStream:
+		return cpt.cseColl
+	default:
+		mt.Fatalf("unknown stream type %v", streamType)
+	}
+	return nil
 }
 
 type cseProseTest struct {
 	coll         *mongo.Collection // collection db.coll
+	kvClient     *mongo.Client
 	keyVaultColl *mongo.Collection
 	cseClient    *mongo.Client     // encrypted client
 	cseColl      *mongo.Collection // db.coll with encrypted client
@@ -651,10 +934,12 @@ func setup(mt *mtest.T, aeo *options.AutoEncryptionOptions, kvClientOpts *option
 	cpt.coll = mt.CreateCollection(mtest.Collection{
 		Name: "coll",
 		DB:   "db",
+		Opts: options.Collection().SetWriteConcern(mtest.MajorityWc),
 	}, false)
 	cpt.keyVaultColl = mt.CreateCollection(mtest.Collection{
 		Name: "datakeys",
-		DB:   "admin",
+		DB:   "keyvault",
+		Opts: options.Collection().SetWriteConcern(mtest.MajorityWc),
 	}, false)
 
 	if aeo != nil {
@@ -663,16 +948,16 @@ func setup(mt *mtest.T, aeo *options.AutoEncryptionOptions, kvClientOpts *option
 				cpt.cseStarted = append(cpt.cseStarted, evt)
 			},
 		}
-		opts := options.Client().ApplyURI(mt.ConnString()).SetWriteConcern(mtest.MajorityWc).
+		opts := options.Client().ApplyURI(mtest.ClusterURI()).SetWriteConcern(mtest.MajorityWc).
 			SetReadPreference(mtest.PrimaryRp).SetAutoEncryptionOptions(aeo).SetMonitor(cseMonitor)
 		cpt.cseClient, err = mongo.Connect(mtest.Background, opts)
 		assert.Nil(mt, err, "Connect error for encrypted client: %v", err)
 		cpt.cseColl = cpt.cseClient.Database("db").Collection("coll")
 	}
 	if ceo != nil {
-		kvClient, err := mongo.Connect(mtest.Background, kvClientOpts)
+		cpt.kvClient, err = mongo.Connect(mtest.Background, kvClientOpts)
 		assert.Nil(mt, err, "Connect error for ClientEncryption key vault client: %v", err)
-		cpt.clientEnc, err = mongo.NewClientEncryption(kvClient, ceo)
+		cpt.clientEnc, err = mongo.NewClientEncryption(cpt.kvClient, ceo)
 		assert.Nil(mt, err, "NewClientEncryption error: %v", err)
 	}
 	return &cpt
@@ -682,12 +967,10 @@ func (cpt *cseProseTest) teardown(mt *mtest.T) {
 	mt.Helper()
 
 	if cpt.cseClient != nil {
-		err := cpt.cseClient.Disconnect(mtest.Background)
-		assert.Nil(mt, err, "encrypted client Disconnect error: %v", err)
+		_ = cpt.cseClient.Disconnect(mtest.Background)
 	}
 	if cpt.clientEnc != nil {
-		err := cpt.clientEnc.Close(mtest.Background)
-		assert.Nil(mt, err, "ClientEncryption Close error: %v", err)
+		_ = cpt.clientEnc.Close(mtest.Background)
 	}
 }
 
@@ -699,6 +982,18 @@ func readJSONFile(mt *mtest.T, file string) bson.Raw {
 
 	var doc bson.Raw
 	err = bson.UnmarshalExtJSON(content, true, &doc)
+	assert.Nil(mt, err, "UnmarshalExtJSON error for file %v: %v", file, err)
+	return doc
+}
+
+func decodeJSONFile(mt *mtest.T, file string, val interface{}) bson.Raw {
+	mt.Helper()
+
+	content, err := ioutil.ReadFile(filepath.Join(clientEncryptionProseDir, file))
+	assert.Nil(mt, err, "ReadFile error for %v: %v", file, err)
+
+	var doc bson.Raw
+	err = bson.UnmarshalExtJSON(content, true, val)
 	assert.Nil(mt, err, "UnmarshalExtJSON error for file %v: %v", file, err)
 	return doc
 }
