@@ -16,7 +16,7 @@ imports:
   - name: github.com/evergreen-ci/gimlet
     version: 3aa4522aad2fa8ad15755e00441b597d6d54cc5e
   - name: go.mongodb.org/mongo-driver
-    version: 305bc4a5e4131420fe8ba5628e6faa9e6ade4e86
+    version: 24febe4e929bdf17a5139c19daae871d71bdb184
   - name: github.com/evergreen-ci/pail
     version: 055ae19f1c325c86bfebb1678395242f26b2ab8c
   - name: github.com/pkg/errors

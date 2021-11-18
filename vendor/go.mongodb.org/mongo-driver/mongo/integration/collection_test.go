@@ -15,6 +15,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/event"
 	"go.mongodb.org/mongo-driver/internal/testutil/assert"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/integration/mtest"
@@ -32,14 +33,16 @@ const (
 	errorModifiedID             = 66
 )
 
-func TestCollection(t *testing.T) {
-	mt := mtest.New(t, mtest.NewOptions().CreateClient(false))
-	defer mt.Close()
-
+var (
 	// impossibleWc is a write concern that can't be satisfied and is used to test write concern errors
 	// for various operations. It includes a timeout because legacy servers will wait for all W nodes to respond,
 	// causing tests to hang.
-	impossibleWc := writeconcern.New(writeconcern.W(500), writeconcern.WTimeout(time.Second))
+	impossibleWc = writeconcern.New(writeconcern.W(30), writeconcern.WTimeout(time.Second))
+)
+
+func TestCollection(t *testing.T) {
+	mt := mtest.New(t, mtest.NewOptions().CreateClient(false))
+	defer mt.Close()
 
 	mt.RunOpts("insert one", noClientOpts, func(mt *mtest.T) {
 		mt.Run("success", func(mt *mtest.T) {
@@ -70,6 +73,50 @@ func TestCollection(t *testing.T) {
 			we, ok := err.(mongo.WriteException)
 			assert.True(mt, ok, "expected error type %v, got %v", mongo.WriteException{}, err)
 			assert.NotNil(mt, we.WriteConcernError, "expected write concern error, got %+v", we)
+		})
+
+		// Require 3.2 servers for bypassDocumentValidation support.
+		convertedOptsOpts := mtest.NewOptions().MinServerVersion("3.2")
+		mt.RunOpts("options are converted", convertedOptsOpts, func(mt *mtest.T) {
+			nilOptsTestCases := []struct {
+				name            string
+				opts            []*options.InsertOneOptions
+				expectOptionSet bool
+			}{
+				{
+					"only nil is passed",
+					[]*options.InsertOneOptions{nil},
+					false,
+				},
+				{
+					"non-nil options is passed before nil",
+					[]*options.InsertOneOptions{options.InsertOne().SetBypassDocumentValidation(true), nil},
+					true,
+				},
+				{
+					"non-nil options is passed after nil",
+					[]*options.InsertOneOptions{nil, options.InsertOne().SetBypassDocumentValidation(true)},
+					true,
+				},
+			}
+
+			for _, testCase := range nilOptsTestCases {
+				mt.Run(testCase.name, func(mt *mtest.T) {
+					doc := bson.D{{"x", 1}}
+					_, err := mt.Coll.InsertOne(mtest.Background, doc, testCase.opts...)
+					assert.Nil(mt, err, "InsertOne error: %v", err)
+					optName := "bypassDocumentValidation"
+					evt := mt.GetStartedEvent()
+
+					val, err := evt.Command.LookupErr(optName)
+					if testCase.expectOptionSet {
+						assert.Nil(mt, err, "expected %v to be set but got: %v", optName, err)
+						assert.True(mt, val.Boolean(), "expected %v to be true but got: %v", optName, val.Boolean())
+						return
+					}
+					assert.NotNil(mt, err, "expected %v to be unset but got nil", optName)
+				})
+			}
 		})
 	})
 	mt.RunOpts("insert many", noClientOpts, func(mt *mtest.T) {
@@ -163,6 +210,74 @@ func TestCollection(t *testing.T) {
 					assert.Equal(mt, errorDuplicateKey, gotCode, "expected error code %v, got %v", errorDuplicateKey, gotCode)
 				})
 			}
+		})
+		mt.Run("return only inserted ids", func(mt *mtest.T) {
+			id := int32(11)
+			docs := []interface{}{
+				bson.D{{"_id", id}},
+				bson.D{{"_id", id}},
+				bson.D{{"x", 6}},
+				bson.D{{"_id", id}},
+			}
+
+			testCases := []struct {
+				name        string
+				ordered     bool
+				numInserted int
+				numErrors   int
+			}{
+				{"unordered", false, 2, 2},
+				{"ordered", true, 1, 1},
+			}
+			for _, tc := range testCases {
+				mt.Run(tc.name, func(mt *mtest.T) {
+					res, err := mt.Coll.InsertMany(mtest.Background, docs, options.InsertMany().SetOrdered(tc.ordered))
+
+					assert.Equal(mt, tc.numInserted, len(res.InsertedIDs), "expected %v inserted IDs, got %v", tc.numInserted, len(res.InsertedIDs))
+					assert.Equal(mt, id, res.InsertedIDs[0], "expected inserted ID %v, got %v", id, res.InsertedIDs[0])
+					if tc.numInserted > 1 {
+						assert.NotNil(mt, res.InsertedIDs[1], "expected ID but got nil")
+					}
+
+					we, ok := err.(mongo.BulkWriteException)
+					assert.True(mt, ok, "expected error type %T, got %T", mongo.BulkWriteException{}, err)
+					numErrors := len(we.WriteErrors)
+					assert.Equal(mt, tc.numErrors, numErrors, "expected %v write errors, got %v", tc.numErrors, numErrors)
+					gotCode := we.WriteErrors[0].Code
+					assert.Equal(mt, errorDuplicateKey, gotCode, "expected error code %v, got %v", errorDuplicateKey, gotCode)
+				})
+			}
+		})
+		mt.Run("writeError index", func(mt *mtest.T) {
+			// TODO(GODRIVER-425): remove this as part a larger project to
+			// refactor integration and other longrunning tasks.
+			if os.Getenv("EVR_TASK_ID") == "" {
+				mt.Skip("skipping long running integration test outside of evergreen")
+			}
+
+			// force multiple batches
+			numDocs := 700000
+			var docs []interface{}
+			for i := 0; i < numDocs; i++ {
+				d := bson.D{
+					{"a", int32(i)},
+					{"b", int32(i * 2)},
+					{"c", int32(i * 3)},
+				}
+				docs = append(docs, d)
+			}
+			repeated := bson.D{{"_id", int32(11)}}
+			docs = append(docs, repeated, repeated)
+
+			_, err := mt.Coll.InsertMany(context.Background(), docs)
+			assert.NotNil(mt, err, "expected InsertMany error, got nil")
+
+			we, ok := err.(mongo.BulkWriteException)
+			assert.True(mt, ok, "expected error type %T, got %T", mongo.BulkWriteException{}, err)
+			numErrors := len(we.WriteErrors)
+			assert.Equal(mt, 1, numErrors, "expected 1 write error, got %v", numErrors)
+			gotIndex := we.WriteErrors[0].Index
+			assert.Equal(mt, numDocs+1, gotIndex, "expected index %v, got %v", numDocs+1, gotIndex)
 		})
 		wcCollOpts := options.Collection().SetWriteConcern(impossibleWc)
 		wcTestOpts := mtest.NewOptions().CollectionOptions(wcCollOpts).Topologies(mtest.ReplicaSet)
@@ -705,10 +820,40 @@ func TestCollection(t *testing.T) {
 			got := x.Int32()
 			assert.Equal(mt, int32(1), got, "expected x value 1, got %v", got)
 		})
-		mt.Run("options", func(mt *mtest.T) {
+		mt.RunOpts("options", mtest.NewOptions().MinServerVersion("3.4"), func(mt *mtest.T) {
 			initCollection(mt, mt.Coll)
-			opts := options.FindOne().SetComment("here's a query for ya")
-			res, err := mt.Coll.FindOne(mtest.Background, bson.D{{"x", 1}}, opts).DecodeBytes()
+
+			// Create an index for Hint, Max, and Min options
+			indexView := mt.Coll.Indexes()
+			indexName, err := indexView.CreateOne(context.Background(), mongo.IndexModel{
+				Keys: bson.D{{"x", 1}},
+			})
+			assert.Nil(mt, err, "CreateOne error: %v", err)
+
+			mt.ClearEvents()
+			expectedComment := "here's a query for ya"
+			// SetCursorType is excluded because tailable cursors can't be used with limit -1,
+			// which all FindOne operations set, and the nontailable setting isn't passed to the
+			// operation layer
+			// SetMaxAwaitTime affects the cursor and not the server command, so it can't be checked
+			// SetCursorTime and setMaxAwaitTime will be deprecated in GODRIVER-1775
+			opts := options.FindOne().
+				SetAllowPartialResults(true).
+				SetBatchSize(2).
+				SetCollation(&options.Collation{Locale: "en_US"}).
+				SetComment(expectedComment).
+				SetHint(indexName).
+				SetMax(bson.D{{"x", int32(5)}}).
+				SetMaxTime(1 * time.Second).
+				SetMin(bson.D{{"x", int32(0)}}).
+				SetNoCursorTimeout(false).
+				SetOplogReplay(false).
+				SetProjection(bson.D{{"x", int32(1)}}).
+				SetReturnKey(false).
+				SetShowRecordID(false).
+				SetSkip(0).
+				SetSort(bson.D{{"x", int32(1)}})
+			res, err := mt.Coll.FindOne(mtest.Background, bson.D{}, opts).DecodeBytes()
 			assert.Nil(mt, err, "FindOne error: %v", err)
 
 			x, err := res.LookupErr("x")
@@ -716,6 +861,32 @@ func TestCollection(t *testing.T) {
 			assert.Equal(mt, bson.TypeInt32, x.Type, "expected x type %v, got %v", bson.TypeInt32, x.Type)
 			got := x.Int32()
 			assert.Equal(mt, int32(1), got, "expected x value 1, got %v", got)
+
+			optionsDoc := bsoncore.NewDocumentBuilder().
+				AppendBoolean("allowPartialResults", true).
+				AppendInt32("batchSize", 2).
+				StartDocument("collation").AppendString("locale", "en_US").FinishDocument().
+				AppendString("comment", expectedComment).
+				AppendString("hint", indexName).
+				StartDocument("max").AppendInt32("x", 5).FinishDocument().
+				AppendInt32("maxTimeMS", 1000).
+				StartDocument("min").AppendInt32("x", 0).FinishDocument().
+				AppendBoolean("noCursorTimeout", false).
+				AppendBoolean("oplogReplay", false).
+				StartDocument("projection").AppendInt32("x", 1).FinishDocument().
+				AppendBoolean("returnKey", false).
+				AppendBoolean("showRecordId", false).
+				AppendInt64("skip", 0).
+				StartDocument("sort").AppendInt32("x", 1).FinishDocument().
+				Build()
+
+			started := mt.GetStartedEvent()
+			assert.NotNil(mt, started, "expected CommandStartedEvent, got nil")
+
+			if err := compareDocs(mt, bson.Raw(optionsDoc), started.Command); err != nil {
+				mt.Fatalf("options mismatch: %v", err)
+			}
+
 		})
 		mt.Run("not found", func(mt *mtest.T) {
 			initCollection(mt, mt.Coll)
@@ -966,7 +1137,11 @@ func TestCollection(t *testing.T) {
 		})
 		mt.Run("correct model in errors", func(mt *mtest.T) {
 			models := []mongo.WriteModel{
-				mongo.NewUpdateOneModel().SetFilter(bson.M{}).SetUpdate(bson.M{}),
+				mongo.NewUpdateOneModel().SetFilter(bson.M{}).SetUpdate(bson.M{
+					"$set": bson.M{
+						"x": 1,
+					},
+				}),
 				mongo.NewInsertOneModel().SetDocument(bson.M{
 					"_id": "notduplicate",
 				}),
@@ -992,6 +1167,192 @@ func TestCollection(t *testing.T) {
 			actualModel := bwException.WriteErrors[0].Request
 			assert.Equal(mt, expectedModel, actualModel, "expected model %v in BulkWriteException, got %v",
 				expectedModel, actualModel)
+		})
+		mt.Run("unordered writeError index", func(mt *mtest.T) {
+			cappedOpts := bson.D{{"capped", true}, {"size", 64 * 1024}}
+			// Use a capped collection to get WriteErrors for delete operations
+			capped := mt.CreateCollection(mtest.Collection{
+				Name:       "deleteOne_capped",
+				CreateOpts: cappedOpts,
+			}, true)
+			models := []mongo.WriteModel{
+				mongo.NewInsertOneModel().SetDocument(bson.D{{"_id", "id1"}}),
+				mongo.NewInsertOneModel().SetDocument(bson.D{{"_id", "id3"}}),
+			}
+			_, err := capped.BulkWrite(mtest.Background, models, options.BulkWrite())
+			assert.Nil(t, err, "BulkWrite error: %v", err)
+
+			// UpdateOne and ReplaceOne models are batched together, so they each appear once
+			models = []mongo.WriteModel{
+				mongo.NewDeleteOneModel().SetFilter(bson.D{{"_id", "id0"}}),
+				mongo.NewDeleteManyModel().SetFilter(bson.D{{"_id", "id0"}}),
+				mongo.NewUpdateOneModel().SetFilter(bson.D{{"_id", "id3"}}).SetUpdate(bson.D{{"$set", bson.D{{"_id", 3.14159}}}}),
+				mongo.NewInsertOneModel().SetDocument(bson.D{{"_id", "id1"}}),
+				mongo.NewDeleteManyModel().SetFilter(bson.D{{"_id", "id0"}}),
+				mongo.NewUpdateManyModel().SetFilter(bson.D{{"_id", "id3"}}).SetUpdate(bson.D{{"$set", bson.D{{"_id", 3.14159}}}}),
+				mongo.NewDeleteOneModel().SetFilter(bson.D{{"_id", "id0"}}),
+				mongo.NewInsertOneModel().SetDocument(bson.D{{"_id", "id1"}}),
+				mongo.NewReplaceOneModel().SetFilter(bson.D{{"_id", "id3"}}).SetReplacement(bson.D{{"_id", 3.14159}}),
+				mongo.NewUpdateManyModel().SetFilter(bson.D{{"_id", "id3"}}).SetUpdate(bson.D{{"$set", bson.D{{"_id", 3.14159}}}}),
+			}
+			_, err = capped.BulkWrite(mtest.Background, models, options.BulkWrite().SetOrdered(false))
+			bwException, ok := err.(mongo.BulkWriteException)
+			assert.True(mt, ok, "expected error of type %T, got %T", mongo.BulkWriteException{}, err)
+
+			assert.Equal(mt, len(bwException.WriteErrors), 10, "expected 10 writeErrors, got %v", len(bwException.WriteErrors))
+			for _, writeErr := range bwException.WriteErrors {
+				switch writeErr.Request.(type) {
+				case *mongo.DeleteOneModel:
+					assert.True(mt, writeErr.Index == 0 || writeErr.Index == 6,
+						"expected index 0 or 6, got %v", writeErr.Index)
+				case *mongo.DeleteManyModel:
+					assert.True(mt, writeErr.Index == 1 || writeErr.Index == 4,
+						"expected index 1 or 4, got %v", writeErr.Index)
+				case *mongo.UpdateManyModel:
+					assert.True(mt, writeErr.Index == 5 || writeErr.Index == 9,
+						"expected index 5 or 9, got %v", writeErr.Index)
+				case *mongo.InsertOneModel:
+					assert.True(mt, writeErr.Index == 3 || writeErr.Index == 7,
+						"expected index 3 or 7, got %v", writeErr.Index)
+				case *mongo.UpdateOneModel:
+					assert.Equal(mt, writeErr.Index, 2, "expected index 2, got %v", writeErr.Index)
+				case *mongo.ReplaceOneModel:
+					assert.Equal(mt, writeErr.Index, 8, "expected index 8, got %v", writeErr.Index)
+				}
+
+			}
+		})
+		mt.Run("unordered upsertID index", func(mt *mtest.T) {
+			id1 := "id1"
+			id3 := "id3"
+			models := []mongo.WriteModel{
+				mongo.NewDeleteOneModel().SetFilter(bson.D{{"_id", "id0"}}),
+				mongo.NewReplaceOneModel().SetFilter(bson.D{{"_id", id1}}).SetReplacement(bson.D{{"_id", id1}}).SetUpsert(true),
+				mongo.NewDeleteOneModel().SetFilter(bson.D{{"_id", "id2"}}),
+				mongo.NewReplaceOneModel().SetFilter(bson.D{{"_id", id3}}).SetReplacement(bson.D{{"_id", id3}}).SetUpsert(true),
+				mongo.NewDeleteOneModel().SetFilter(bson.D{{"_id", "id4"}}),
+			}
+			res, err := mt.Coll.BulkWrite(mtest.Background, models, options.BulkWrite().SetOrdered(false))
+			assert.Nil(mt, err, "bulkwrite error: %v", err)
+
+			assert.Equal(mt, len(res.UpsertedIDs), 2, "expected 2 UpsertedIDs, got %v", len(res.UpsertedIDs))
+			assert.Equal(mt, res.UpsertedIDs[1].(string), id1, "expected UpsertedIDs[1] to be %v, got %v", id1, res.UpsertedIDs[1])
+			assert.Equal(mt, res.UpsertedIDs[3].(string), id3, "expected UpsertedIDs[3] to be %v, got %v", id3, res.UpsertedIDs[3])
+		})
+		unackClientOpts := options.Client().
+			SetWriteConcern(writeconcern.New(writeconcern.W(0)))
+		unackMtOpts := mtest.NewOptions().
+			ClientOptions(unackClientOpts).
+			MinServerVersion("3.6")
+		mt.RunOpts("unacknowledged write", unackMtOpts, func(mt *mtest.T) {
+			models := []mongo.WriteModel{
+				mongo.NewInsertOneModel().SetDocument(bson.D{{"x", 1}}),
+			}
+			_, err := mt.Coll.BulkWrite(mtest.Background, models)
+			if err != mongo.ErrUnacknowledgedWrite {
+				// Use a direct comparison rather than assert.Equal because assert.Equal will compare the error strings,
+				// so the assertion would succeed even if the error had not been wrapped.
+				mt.Fatalf("expected BulkWrite error %v, got %v", mongo.ErrUnacknowledgedWrite, err)
+			}
+		})
+		mt.Run("insert and delete with batches", func(mt *mtest.T) {
+			// grouped together because delete requires the documents to be inserted
+			numDocs := 100050
+			var insertModels []mongo.WriteModel
+			var deleteModels []mongo.WriteModel
+			for i := 0; i < numDocs; i++ {
+				d := bson.D{
+					{"a", int32(i)},
+					{"b", int32(i * 2)},
+					{"c", int32(i * 3)},
+				}
+				insertModels = append(insertModels, mongo.NewInsertOneModel().SetDocument(d))
+				deleteModels = append(deleteModels, mongo.NewDeleteOneModel().SetFilter(bson.D{}))
+			}
+			mt.ClearEvents()
+			res, err := mt.Coll.BulkWrite(mtest.Background, insertModels)
+			assert.Nil(mt, err, "BulkWrite error: %v", err)
+			assert.Equal(mt, int64(numDocs), res.InsertedCount, "expected %v inserted documents, got %v", numDocs, res.InsertedCount)
+			mt.FilterStartedEvents(func(evt *event.CommandStartedEvent) bool {
+				return evt.CommandName == "insert"
+			})
+			// MaxWriteBatchSize changed between 3.4 and 3.6, so there isn't a given number of batches that this will be split into
+			inserts := len(mt.GetAllStartedEvents())
+			assert.True(mt, inserts > 1, "expected multiple batches, got %v", inserts)
+
+			mt.ClearEvents()
+			res, err = mt.Coll.BulkWrite(mtest.Background, deleteModels)
+			assert.Nil(mt, err, "BulkWrite error: %v", err)
+			assert.Equal(mt, int64(numDocs), res.DeletedCount, "expected %v deleted documents, got %v", numDocs, res.DeletedCount)
+			mt.FilterStartedEvents(func(evt *event.CommandStartedEvent) bool {
+				return evt.CommandName == "delete"
+			})
+			// MaxWriteBatchSize changed between 3.4 and 3.6, so there isn't a given number of batches that this will be split into
+			deletes := len(mt.GetAllStartedEvents())
+			assert.True(mt, deletes > 1, "expected multiple batches, got %v", deletes)
+		})
+		mt.Run("update with batches", func(mt *mtest.T) {
+			var models []mongo.WriteModel
+			numModels := 100050
+
+			// it's significantly faster to upsert one model and modify the rest than to upsert all of them
+			for i := 0; i < numModels-1; i++ {
+				update := bson.D{
+					{"$set", bson.D{
+						{"a", int32(i + 1)},
+						{"b", int32(i * 2)},
+						{"c", int32(i * 3)},
+					}},
+				}
+				model := mongo.NewUpdateOneModel().
+					SetFilter(bson.D{{"a", int32(i)}}).
+					SetUpdate(update).SetUpsert(true)
+				models = append(models, model)
+			}
+			// add one last upsert
+			models = append(models, mongo.NewUpdateOneModel().
+				SetFilter(bson.D{{"x", int32(1)}}).
+				SetUpdate(bson.D{{"$set", bson.D{{"x", int32(1)}}}}).
+				SetUpsert(true),
+			)
+
+			mt.ClearEvents()
+			res, err := mt.Coll.BulkWrite(mtest.Background, models)
+			assert.Nil(mt, err, "BulkWrite error: %v", err)
+
+			mt.FilterStartedEvents(func(evt *event.CommandStartedEvent) bool {
+				return evt.CommandName == "update"
+			})
+			// MaxWriteBatchSize changed between 3.4 and 3.6, so there isn't a given number of batches that this will be split into
+			updates := len(mt.GetAllStartedEvents())
+			assert.True(mt, updates > 1, "expected multiple batches, got %v", updates)
+
+			assert.Equal(mt, int64(numModels-2), res.ModifiedCount, "expected %v modified documents, got %v", numModels-2, res.ModifiedCount)
+			assert.Equal(mt, int64(numModels-2), res.MatchedCount, "expected %v matched documents, got %v", numModels-2, res.ModifiedCount)
+			assert.Equal(mt, int64(2), res.UpsertedCount, "expected %v upserted documents, got %v", 2, res.UpsertedCount)
+			assert.Equal(mt, 2, len(res.UpsertedIDs), "expected %v upserted ids, got %v", 2, len(res.UpsertedIDs))
+
+			// find the upserted documents and check their contents
+			id1, ok := res.UpsertedIDs[0]
+			assert.True(mt, ok, "expected id at key 0")
+			id2, ok := res.UpsertedIDs[int64(numModels-1)]
+			assert.True(mt, ok, "expected id at key %v", numModels-1)
+
+			doc, err := mt.Coll.FindOne(mtest.Background, bson.D{{"_id", id1}}).DecodeBytes()
+			a, ok := doc.Lookup("a").Int32OK()
+			assert.True(mt, ok, "expected a to be an int32")
+			assert.Equal(mt, int32(numModels-1), a, "expected a value %v, got %v", numModels-1, a)
+			b, ok := doc.Lookup("b").Int32OK()
+			assert.True(mt, ok, "expected b to be an int32")
+			assert.Equal(mt, int32((numModels-2)*2), b, "expected b value %v, got %v", (numModels-2)*2, b)
+			c, ok := doc.Lookup("c").Int32OK()
+			assert.True(mt, ok, "expected c to be an int32")
+			assert.Equal(mt, int32((numModels-2)*3), c, "expected b value %v, got %v", (numModels-2)*3, c)
+
+			doc, err = mt.Coll.FindOne(mtest.Background, bson.D{{"_id", id2}}).DecodeBytes()
+			x, ok := doc.Lookup("x").Int32OK()
+			assert.True(mt, ok, "expected x to be an int32")
+			assert.Equal(mt, int32(1), x, "expected a value 1, got %v", x)
 		})
 	})
 }
