@@ -100,6 +100,9 @@ tasks:
     name: test-model
   - <<: *run-build
     tags: ["test"]
+    name: test-repobuilder
+  - <<: *run-build
+    tags: ["test"]
     name: test-units
 
   - <<: *run-build
@@ -111,6 +114,12 @@ tasks:
   - <<: *run-build
     tags: ["lint"]
     name: lint-model
+  - <<: *run-build
+    tags: ["lint"]
+    name: lint-repobuilder
+  - <<: *run-build
+    tags: ["lint"]
+    name: lint-rest
   - <<: *run-build
     tags: ["lint"]
     name: lint-units
