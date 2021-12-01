@@ -50,7 +50,7 @@ repos:
     edition: community
     bucket: repo.mongodb.org
     repos:
-      - apt/ubuntu/dists/xenial/mongodb-org/universe 
+      - apt/ubuntu/dists/xenial/mongodb-org/universe
 
 ####################
 #
@@ -89,5 +89,4 @@ repos:
     type: deb
     edition: enterprise
     bucket: repo.mongodb.com
-    repos: 
-      - apt/ubuntu/dists/xenial/mongodb-enterprise/multiverse
+    repos: apt/ubuntu/dists/xenial/mongodb-enterprise/multiverse

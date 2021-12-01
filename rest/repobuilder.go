@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/evergreen-ci/barque/model"
+	"github.com/evergreen-ci/barque/repobuilder"
 	"github.com/evergreen-ci/gimlet"
 	"github.com/mongodb/amboy"
-	"github.com/mongodb/curator/repobuilder"
 	"github.com/pkg/errors"
 )
 
