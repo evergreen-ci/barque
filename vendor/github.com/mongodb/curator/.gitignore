@@ -1,7 +1,0 @@
-build
-\#*\#
-*~
-*.out
-curator
-curator.exe
-!cmd/curator

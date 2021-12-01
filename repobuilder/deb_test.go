@@ -36,7 +36,7 @@ func (s *RepoJobSuite) TestDEBCompletedSetter() {
 	conf, err := GetConfig("config_test.yaml")
 	s.Require().NoError(err)
 	repo, ok := conf.GetRepositoryDefinition("debian8", "enterprise")
-	repo.Bucket = "build-curator-testing"
+	repo.Bucket = "build-repobuilder-testing"
 	s.True(ok)
 	s.createJob(conf, repo, "2.8.8", "x86_64", "default")
 

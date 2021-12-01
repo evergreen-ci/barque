@@ -2,7 +2,7 @@
 name := barque
 buildDir := build
 srcFiles := makefile $(shell find . -name "*.go" -not -path "./$(buildDir)/*" -not -name "*_test.go" -not -path "*\#*")
-packages := $(name) model rest units operations
+packages := $(name) model repobuilder rest units operations
 orgPath := github.com/evergreen-ci
 projectPath := $(orgPath)/$(name)
 # end project configuration
@@ -25,9 +25,9 @@ endif
 export GO111MODULE := off
 ifneq (,$(RACE_DETECTOR))
 # cgo is required for using the race detector.
-export CGO_ENABLED=1
+export CGO_ENABLED := 1
 else
-export CGO_ENABLED=0
+export CGO_ENABLED := 0
 endif
 # end environment setup
 
@@ -97,12 +97,6 @@ vendor-clean:
 	rm -rf vendor/github.com/mongodb/jasper/vendor/go.mongodb.org/mongo-driver/
 	rm -rf vendor/github.com/mongodb/jasper/vendor/github.com/urfave/cli/
 	rm -rf vendor/github.com/mongodb/jasper/vendor/gopkg.in/mgo.v2/
-	rm -rf vendor/github.com/mongodb/curator/vendor/
-	rm -rf vendor/github.com/mongodb/curator/operations/
-	rm -rf vendor/github.com/mongodb/curator/greenbay/
-	rm -rf vendor/github.com/mongodb/curator/barquesubmit/
-	rm -rf vendor/github.com/mongodb/curator/cmd/
-	rm -rf vendor/github.com/mongodb/curator/*.{go,yaml,rst,lock}
 	rm -rf vendor/github.com/evergreen-ci/gimlet/vendor/github.com/davecgh/
 	rm -rf vendor/github.com/evergreen-ci/gimlet/vendor/github.com/mongodb/grip/
 	rm -rf vendor/github.com/evergreen-ci/gimlet/vendor/github.com/pkg/errors/

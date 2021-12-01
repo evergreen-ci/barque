@@ -29,7 +29,7 @@ func (s *RepoJobSuite) TestRPMCompletedSetter() {
 	conf, err := GetConfig("config_test.yaml")
 	s.Require().NoError(err)
 	repo, ok := conf.GetRepositoryDefinition("rhel5", "enterprise")
-	repo.Bucket = "build-curator-testing"
+	repo.Bucket = "build-repobuilder-testing"
 	s.True(ok)
 	s.createJob(conf, repo, "2.8.8", "x86_64", "default")
 

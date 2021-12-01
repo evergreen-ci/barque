@@ -383,7 +383,7 @@ func (j *repoBuilderJob) signFile(fileName, archiveExtension string, overwrite b
 		"notary-client.py",
 		"--key-name", j.NotaryKey,
 		"--auth-token", j.NotaryToken,
-		"--comment", "\"curator package signing\"",
+		"--comment", "\"repobuilder package signing\"",
 		"--notary-url", j.Conf.Services.NotaryURL,
 		"--archive-file-ext", archiveExtension,
 		"--outputs", "sig",
@@ -694,7 +694,7 @@ func (j *repoBuilderJob) Run(ctx context.Context) {
 			changedComponent = changed[len(local)+1:]
 			syncSource = changed
 		} else {
-			j.AddError(errors.Errorf("curator does not support uploading '%s' repos",
+			j.AddError(errors.Errorf("repobuilder does not support uploading '%s' repos",
 				j.Distro.Type))
 			return
 		}
