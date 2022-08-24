@@ -23,7 +23,7 @@ func TestConstructorLegacyGridFS(t *testing.T) {
 		t.Parallel()
 		_, err := NewLegacyGridFSBucket(GridFSOptions{MongoDBURI: "foo"})
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "problem connecting")
+		assert.Contains(t, err.Error(), "connecting")
 	})
 	t.Run("CreateConnectionFromURI", func(t *testing.T) {
 		t.Parallel()

@@ -39,7 +39,7 @@ targets:
 ``test-<package>``
    Runs all tests for a specific package
 
-``race``, ``race-<package>``
+``RACE_DETECTOR=1 make test-package``
    As with their ``test`` counterpart, these targets run tests with
    the race detector enabled.
 

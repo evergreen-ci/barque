@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/evergreen-ci/utility"
 	"github.com/mongodb/grip"
 	"github.com/mongodb/grip/message"
 	"github.com/pkg/errors"
@@ -80,7 +81,7 @@ func NewLocalTemporaryBucket(opts LocalOptions) (Bucket, error) {
 	}
 	dir, err := ioutil.TempDir("", "pail-local-tmp-bucket")
 	if err != nil {
-		return nil, errors.Wrap(err, "problem creating temporary directory")
+		return nil, errors.Wrap(err, "creating temporary directory")
 	}
 
 	return &localFileSystem{
@@ -116,12 +117,12 @@ func (b *localFileSystem) Writer(_ context.Context, name string) (io.WriteCloser
 
 	path := filepath.Join(b.path, b.normalizeKey(name))
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return nil, errors.Wrap(err, "problem creating base directories")
+		return nil, errors.Wrap(err, "creating base directories")
 	}
 
 	f, err := os.Create(path)
 	if err != nil {
-		return nil, errors.Wrapf(err, "problem opening file '%s'", path)
+		return nil, errors.Wrapf(err, "opening file '%s'", path)
 	}
 
 	return f, nil
@@ -139,7 +140,10 @@ func (b *localFileSystem) Reader(_ context.Context, name string) (io.ReadCloser,
 	path := filepath.Join(b.path, b.normalizeKey(name))
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, errors.Wrapf(err, "problem opening file '%s'", path)
+		if os.IsNotExist(err) {
+			err = MakeKeyNotFoundError(err)
+		}
+		return nil, errors.Wrapf(err, "opening file '%s'", path)
 	}
 
 	return f, nil
@@ -162,7 +166,7 @@ func (b *localFileSystem) Put(ctx context.Context, name string, input io.Reader)
 	_, err = io.Copy(f, input)
 	if err != nil {
 		_ = f.Close()
-		return errors.Wrap(err, "problem copying data to file")
+		return errors.Wrap(err, "copying data to file")
 	}
 
 	return errors.WithStack(f.Close())
@@ -193,7 +197,7 @@ func (b *localFileSystem) Upload(ctx context.Context, name, path string) error {
 
 	f, err := os.Open(path)
 	if err != nil {
-		return errors.Wrapf(err, "problem opening file %s", name)
+		return errors.Wrapf(err, "opening file '%s'", name)
 	}
 	defer f.Close()
 
@@ -213,12 +217,12 @@ func (b *localFileSystem) Download(ctx context.Context, name, path string) error
 	catcher := grip.NewBasicCatcher()
 
 	if err := os.MkdirAll(filepath.Dir(path), 0600); err != nil {
-		return errors.Wrapf(err, "problem creating enclosing directory for '%s'", path)
+		return errors.Wrapf(err, "creating enclosing directory for '%s'", path)
 	}
 
 	f, err := os.Create(path)
 	if err != nil {
-		return errors.Wrapf(err, "problem creating file '%s'", path)
+		return errors.Wrapf(err, "creating file '%s'", path)
 	}
 
 	reader, err := b.Reader(ctx, name)
@@ -231,7 +235,7 @@ func (b *localFileSystem) Download(ctx context.Context, name, path string) error
 	if err != nil {
 		_ = f.Close()
 		_ = reader.Close()
-		return errors.Wrap(err, "problem copying data")
+		return errors.Wrap(err, "copying data")
 	}
 
 	catcher.Add(reader.Close())
@@ -252,17 +256,17 @@ func (b *localFileSystem) Copy(ctx context.Context, options CopyOptions) error {
 
 	from, err := b.Reader(ctx, options.SourceKey)
 	if err != nil {
-		return errors.Wrap(err, "problem getting reader for source")
+		return errors.Wrap(err, "getting reader for source")
 	}
 
 	to, err := options.DestinationBucket.Writer(ctx, options.DestinationKey)
 	if err != nil {
-		return errors.Wrap(err, "problem getting writer for dst")
+		return errors.Wrap(err, "getting writer for destination")
 	}
 
 	_, err = io.Copy(to, from)
 	if err != nil {
-		return errors.Wrap(err, "problem copying data")
+		return errors.Wrap(err, "copying data")
 	}
 
 	return errors.WithStack(to.Close())
@@ -283,8 +287,11 @@ func (b *localFileSystem) Remove(ctx context.Context, key string) error {
 	}
 
 	path := filepath.Join(b.path, b.normalizeKey(key))
-
-	return errors.Wrapf(os.Remove(path), "problem removing path %s", path)
+	err := os.Remove(path)
+	if os.IsNotExist(err) {
+		err = MakeKeyNotFoundError(err)
+	}
+	return errors.Wrapf(err, "removing path '%s'", path)
 }
 
 func (b *localFileSystem) RemoveMany(ctx context.Context, keys ...string) error {
@@ -347,7 +354,7 @@ func (b *localFileSystem) Push(ctx context.Context, opts SyncOptions) error {
 	if opts.Exclude != "" {
 		re, err = regexp.Compile(opts.Exclude)
 		if err != nil {
-			return errors.Wrap(err, "problem compiling exclude regex")
+			return errors.Wrap(err, "compiling exclude regex")
 		}
 	}
 
@@ -371,11 +378,11 @@ func (b *localFileSystem) Push(ctx context.Context, opts SyncOptions) error {
 			continue
 		}
 
-		lsum, err := sha1sum(file)
+		lsum, err := utility.SHA1SumFile(file)
 		if err != nil {
 			return errors.WithStack(err)
 		}
-		rsum, err := sha1sum(target)
+		rsum, err := utility.SHA1SumFile(target)
 		if err != nil {
 			return errors.WithStack(err)
 		}
@@ -388,7 +395,7 @@ func (b *localFileSystem) Push(ctx context.Context, opts SyncOptions) error {
 	}
 
 	if b.deleteOnPush && !b.dryRun {
-		return errors.Wrap(deleteOnPush(ctx, files, opts.Remote, b), "problem with delete on sync after push")
+		return errors.Wrap(deleteOnPush(ctx, files, opts.Remote, b), "deleting on sync after push")
 	}
 	return nil
 }
@@ -409,7 +416,7 @@ func (b *localFileSystem) Pull(ctx context.Context, opts SyncOptions) error {
 	if opts.Exclude != "" {
 		re, err = regexp.Compile(opts.Exclude)
 		if err != nil {
-			return errors.Wrap(err, "problem compiling exclude regex")
+			return errors.Wrap(err, "compiling exclude regex")
 		}
 	}
 
@@ -436,11 +443,11 @@ func (b *localFileSystem) Pull(ctx context.Context, opts SyncOptions) error {
 			continue
 		}
 
-		lsum, err := sha1sum(filepath.Join(prefix, fn))
+		lsum, err := utility.SHA1SumFile(filepath.Join(prefix, fn))
 		if err != nil {
 			return errors.WithStack(err)
 		}
-		rsum, err := sha1sum(path)
+		rsum, err := utility.SHA1SumFile(path)
 		if err != nil {
 			return errors.WithStack(err)
 		}
@@ -453,7 +460,7 @@ func (b *localFileSystem) Pull(ctx context.Context, opts SyncOptions) error {
 	}
 
 	if b.deleteOnPull && !b.dryRun {
-		return errors.Wrap(deleteOnPull(ctx, keys, opts.Local), "problem with delete on sync after pull")
+		return errors.Wrap(deleteOnPull(ctx, keys, opts.Local), "deleting on sync after pull")
 	}
 	return nil
 }

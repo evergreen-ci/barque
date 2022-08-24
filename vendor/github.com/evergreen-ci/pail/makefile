@@ -1,128 +1,145 @@
 buildDir := build
+name := pail
+packages := $(name)
+compilePackages := $(subst $(name),,$(subst -,/,$(foreach target,$(packages),./$(target))))
 projectPath := github.com/evergreen-ci/pail
 
-packages := pail
-
 # start environment setup
-ifneq (,${GO_BIN_PATH})
-gobin := ${GO_BIN_PATH}
-else
 gobin := go
+ifneq (,$(GOROOT))
+gobin := $(GOROOT)/bin/go
 endif
-gopath := $(GOPATH)
+
+goCache := $(GOCACHE)
+ifeq (,$(goCache))
+goCache := $(abspath $(buildDir)/.cache)
+endif
+goModCache := $(GOMODCACHE)
+ifeq (,$(goModCache))
+goModCache := $(abspath $(buildDir)/.mod-cache)
+endif
+lintCache := $(GOLANGCI_LINT_CACHE)
+ifeq (,$(lintCache))
+lintCache := $(abspath $(buildDir)/.lint-cache)
+endif
+
 ifeq ($(OS),Windows_NT)
-gopath := $(shell cygpath -m $(gopath))
-userProfile := $(shell cygpath -m $(USERPROFILE))
+gobin := $(shell cygpath $(gobin))
+goCache := $(shell cygpath -m $(goCache))
+goModCache := $(shell cygpath -m $(goModCache))
+lintCache := $(shell cygpath -m $(lintCache))
+export GOROOT := $(shell cygpath -m $(GOROOT))
 endif
-goEnv := GOPATH=$(gopath) $(if ${GO_BIN_PATH},PATH="$(shell dirname ${GO_BIN_PATH}):${PATH}")
+
+ifneq ($(goCache),$(GOCACHE))
+export GOCACHE := $(goCache)
+endif
+ifneq ($(goModCache),$(GOMODCACHE))
+export GOMODCACHE := $(goModCache)
+endif
+ifneq ($(lintCache),$(GOLANGCI_LINT_CACHE))
+export GOLANGCI_LINT_CACHE := $(lintCache)
+endif
+
+ifneq (,$(RACE_DETECTOR))
+# cgo is required for using the race detector.
+export CGO_ENABLED := 1
+else
+export CGO_ENABLED := 0
+endif
 # end environment setup
 
+# Ensure the build directory exists, since most targets require it.
+$(shell mkdir -p $(buildDir))
+
+.DEFAULT_GOAL := compile
 
 # start lint setup targets
-lintDeps := $(buildDir)/.lintSetup $(buildDir)/run-linter $(buildDir)/golangci-lint
-$(buildDir)/.lintSetup:$(buildDir)/golangci-lint
-	@touch $@
-$(buildDir)/golangci-lint:$(buildDir)
-	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/76a82c6ed19784036bbf2d4c84d0228ca12381a4/install.sh | sh -s -- -b $(buildDir) v1.10.2 >/dev/null 2>&1
-$(buildDir)/run-linter:cmd/run-linter/run-linter.go $(buildDir)/.lintSetup $(buildDir)
-	@$(goEnv) $(gobin) build -o $@ $<
+$(buildDir)/golangci-lint:
+	@curl --retry 10 --retry-max-time 60 -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(buildDir) v1.40.0 >/dev/null 2>&1
+$(buildDir)/run-linter: cmd/run-linter/run-linter.go $(buildDir)/golangci-lint
+	@$(gobin) build -o $@ $<
 # end lint setup targets
 
+# benchmark setup targets
+benchmarks: $(buildDir)/run-benchmarks .FORCE
+	./$(buildDir)/run-benchmarks
+$(buildDir)/run-benchmarks: cmd/run-benchmarks/run-benchmarks.go
+	$(gobin) build -o $@ $<
+# end benchmark setup targets
 
+# start output files
+testOutput := $(foreach target,$(packages),$(buildDir)/output.$(target).test)
+lintOutput := $(foreach target,$(packages),$(buildDir)/output.$(target).lint)
+coverageOutput := $(foreach target,$(packages),$(buildDir)/output.$(target).coverage)
+htmlCoverageOutput := $(foreach target,$(packages),$(buildDir)/output.$(target).coverage.html)
+.PRECIOUS: $(coverageOutput) $(htmlCoverageOutput) $(lintOutput) $(testOutput)
+# end output files
+
+# start basic development operations
+compile:
+	$(gobin) build $(compilePackages)
+test: $(testOutput)
+coverage: $(coverageOutput)
+html-coverage: $(htmlCoverageOutput)
+benchmark:
+	$(gobin) test -v -benchmem -bench=. -run="Benchmark.*" -timeout=20m
+lint: $(lintOutput)
+
+phony += compile lint test coverage html-coverage benchmark
+
+# start convenience targets for running tests and coverage tasks on a
+# specific package.
+test-%: $(buildDir)/output.%.test
+	
+coverage-%: $(buildDir)/output.%.coverage
+	
+html-coverage-%: $(buildDir)/output.%.coverage.html
+	
+lint-%: $(buildDir)/output.%.lint
+	
+# end convenience targets
+# end basic development operations
+
+# start test and coverage artifacts
 testArgs := -v
-ifneq (,$(RUN_TEST))
-testArgs += -run='$(RUN_TEST)'
+ifneq (,$(RACE_DETECTOR))
+	testArgs += -race
 endif
 ifneq (,$(RUN_COUNT))
-  WORK_DIR: ${workdir}
-testArgs += -count='$(RUN_COUNT)'
+	testArgs += -count=$(RUN_COUNT)
+endif
+ifneq (,$(RUN_TEST))
+	testArgs += -run='$(RUN_TEST)'
 endif
 ifneq (,$(SKIP_LONG))
 testArgs += -short
 endif
-ifneq (,$(DISABLE_COVERAGE))
-testArgs += -cover
-endif
-ifneq (,$(RACE_DETECTOR))
-testArgs += -race
-endif
 ifneq (,$(TEST_TIMEOUT))
-testArgs += -timeout=$(TEST_TIMEOUT)
+	testArgs += -timeout=$(TEST_TIMEOUT)
 else
-testArgs += -timeout=30m
+	testArgs += -timeout=30m
 endif
+$(buildDir)/output.%.test: .FORCE
+	$(gobin) test $(testArgs) ./$(if $(subst $(name),,$*),$*,) | tee $@
+	@grep -s -q -e "^PASS" $@
+$(buildDir)/output.%.coverage: .FORCE
+	$(gobin) test $(testArgs) ./$(if $(subst $(name),,$*),$*,) -covermode=count -coverprofile $@ | tee $(buildDir)/output.$*.test
+	@-[ -f $@ ] && $(gobin) tool cover -func=$@ | sed 's%$(projectPath)/%%' | column -t
+	@grep -s -q -e "^PASS" $(subst coverage,test,$@)
+$(buildDir)/output.%.coverage.html: $(buildDir)/output.%.coverage
+	$(gobin) tool cover -html=$< -o $@
 
-# test execution and output handlers
-$(buildDir)/output.%.test:$(buildDir)/ .FORCE
-	export USERPROFILE=$(userProfile)
-	$(goEnv) $(gobin) test $(testArgs) ./$(if $(subst $(name),,$*),$*,) | tee $@
-	@! grep -s -q -e "^FAIL" $@ && ! grep -s -q "^WARNING: DATA RACE" $@
-$(buildDir)/output.test:$(buildDir)/ .FORCE
-	export USERPROFILE=$(userProfile)
-	$(goEnv) $(gobin) test $(testArgs) ./... | tee $@
-	@! grep -s -q -e "^FAIL" $@ && ! grep -s -q "^WARNING: DATA RACE" $@
-$(buildDir)/output.%.coverage:$(buildDir)/ .FORCE
-	export USERPROFILE=$(userProfile)
-	$(goEnv) $(gobin) test $(testArgs) ./$(if $(subst $(name),,$*),$*,) -covermode=count -coverprofile $@ | tee $(buildDir)/output.$*.test
-	@-[ -f $@ ] && $(goEnv) $(gobin) tool cover -func=$@ | sed 's%$(projectPath)/%%' | column -t
-$(buildDir)/output.%.coverage.html:$(buildDir)/output.%.coverage
-	$(goEnv) $(gobin) tool cover -html=$< -o $@
-#  targets to generate gotest output from the linter.
-$(buildDir)/output.%.lint:$(buildDir)/run-linter $(buildDir)/ .FORCE
-	@./$< --output=$@ --lintBin=$(buildDir)/golangci-lint --packages='$*'
-$(buildDir)/output.lint:$(buildDir)/run-linter $(buildDir)/ .FORCE
-	@./$< --output=$@ --lintBin=$(buildDir)/golangci-lint --packages='$(packages)'
-#  targets to process and generate coverage reports
+ifneq (go,$(gobin))
+# We have to handle the PATH specially for linting in CI, because if the PATH has a different version of the Go
+# binary in it, the linter won't work properly.
+lintEnvVars := PATH="$(shell dirname $(gobin)):$(PATH)"
+endif
+$(buildDir)/output.%.lint: $(buildDir)/run-linter .FORCE
+	@$(lintEnvVars) ./$< --output=$@ --lintBin=$(buildDir)/golangci-lint --packages='$*'
 # end test and coverage artifacts
 
-
-# userfacing targets for basic build and development operations
-compile:
-	$(goEnv) $(gobin) build ./
-test:$(buildDir)/test.out
-$(buildDir)/test.out:.FORCE
-	export USERPROFILE=$(userProfile)
-	@mkdir -p $(buildDir)
-	$(goEnv) $(gobin) test $(testArgs) ./ | tee $@
-	@grep -s -q -e "^PASS" $@
-coverage:$(buildDir)/cover.out
-	@$(goEnv) $(gobin) tool cover -func=$< | sed -E 's%$(projectPath)/%%' | column -t
-coverage-html:$(buildDir)/cover.html
-
-benchmark:
-	$(goEnv) $(gobin) test -v -benchmem -bench=. -run="Benchmark.*" -timeout=20m
-lint:$(foreach target,$(packages),$(buildDir)/output.$(target).lint)
-
-phony += lint build race test coverage coverage-html
-.PRECIOUS:$(foreach target,$(packages),$(buildDir)/output.$(target).lint)
-.PRECIOUS:$(buildDir)/output.lint
-# end front-ends
-
-
-$(buildDir): compile
-	@mkdir -p $@
-$(buildDir)/cover.out:$(buildDir) .FORCE
-	export USERPROFILE=$(userProfile)
-	$(goEnv) $(gobin) test $(testArgs) -covermode=count -coverprofile $@ -cover ./
-$(buildDir)/cover.html:$(buildDir)/cover.out
-	$(goEnv) $(gobin) tool cover -html=$< -o $@
-
-
-vendor-clean:
-	find vendor/ -name "*.gif" -o -name "*.gz" -o -name "*.png" -o -name "*.ico" -o -name "*testdata*" | xargs rm -rf
-	rm -rf vendor/github.com/mongodb/grip/vendor/github.com/stretchr/testify
-	rm -rf vendor/go.mongodb.org/mongo-driver/vendor/github.com/pmezard
-	rm -rf vendor/go.mongodb.org/mongo-driver/vendor/github.com/stretchr
-	rm -rf vendor/go.mongodb.org/mongo-driver/vendor/github.com/davecgh
-	rm -rf vendor/go.mongodb.org/mongo-driver/vendor/github.com/montanaflynn
-	rm -rf vendor/github.com/mongodb/grip/vendor/github.com/montanaflynn
-	rm -rf vendor/github.com/mongodb/grip/vendor/github.com/pkg/errors
-phony += vendor-clean
-clean:
-	rm -rf $(lintDeps)
-phony += clean
-
-# mongodb utility targets
+# start mongodb targets
 mongodb/.get-mongodb:
 	rm -rf mongodb
 	mkdir -p mongodb
@@ -138,6 +155,23 @@ check-mongod: mongodb/.get-mongodb
 	@echo "mongod is up"
 # end mongodb targets
 
+# start module management targets
+mod-tidy:
+	$(gobin) mod tidy
+# Check if go.mod and go.sum are clean. If they're clean, then mod tidy should not produce a different result.
+verify-mod-tidy:
+	$(gobin) run cmd/verify-mod-tidy/verify-mod-tidy.go -goBin="$(gobin)"
+phony += mod-tidy verify-mod-tidy
+# end module management targets
+
+# start cleanup targets
+clean:
+	rm -rf $(buildDir)
+clean-results:
+	rm -rf $(buildDir)/output.*
+phony += clean clean-results
+# end cleanup targets
+
 # configure phony targets
 .FORCE:
-.PHONY:$(phony) .FORCE
+.PHONY: $(phony) .FORCE
