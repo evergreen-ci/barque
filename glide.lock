@@ -4,7 +4,7 @@ imports:
   - name: gopkg.in/yaml.v2
     version: 7649d4548cb53a614db133b2a8ac1f31859dda8c
   - name: github.com/evergreen-ci/pail
-    version: 8bead7f820b8402b7c94c1554951c08199bdd3cd
+    version: 1fd2f7732eefed746f6c9eca51c36a7d131b5f97 
   - name: github.com/mongodb/amboy
     version: 1553970ee7418f62c686a17ec859f53ddbd5dffd
   - name: github.com/mongodb/grip
@@ -17,8 +17,6 @@ imports:
     version: 3aa4522aad2fa8ad15755e00441b597d6d54cc5e
   - name: go.mongodb.org/mongo-driver
     version: 24febe4e929bdf17a5139c19daae871d71bdb184
-  - name: github.com/evergreen-ci/pail
-    version: 055ae19f1c325c86bfebb1678395242f26b2ab8c
   - name: github.com/pkg/errors
     version: 856c240a51a2bf8fb8269ea7f3f9b046aadde36e
   - name: github.com/urfave/cli
