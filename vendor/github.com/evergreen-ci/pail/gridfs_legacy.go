@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/evergreen-ci/utility"
 	"github.com/mongodb/grip"
 	"github.com/mongodb/grip/message"
 	"github.com/pkg/errors"
@@ -52,7 +53,7 @@ func NewLegacyGridFSBucket(opts GridFSOptions) (Bucket, error) {
 
 	ses, err := mgo.DialWithTimeout(opts.MongoDBURI, time.Second)
 	if err != nil {
-		return nil, errors.Wrap(err, "problem connecting to MongoDB")
+		return nil, errors.Wrap(err, "connecting to DB")
 	}
 
 	return &gridfsLegacyBucket{
@@ -87,7 +88,7 @@ func (b *gridfsLegacyBucket) Check(_ context.Context) error {
 		return errors.New("no session defined")
 	}
 
-	return errors.Wrap(b.session.Ping(), "problem contacting mongodb")
+	return errors.Wrap(b.session.Ping(), "contacting DB")
 }
 
 func (b *gridfsLegacyBucket) gridFS() *mgo.GridFS {
@@ -113,8 +114,11 @@ func (b *gridfsLegacyBucket) openFile(ctx context.Context, name string, create b
 		file, err = gridfs.Open(normalizedName)
 	}
 	if err != nil {
+		if err == mgo.ErrNotFound {
+			err = MakeKeyNotFoundError(err)
+		}
 		ses.Close()
-		return nil, errors.Wrapf(err, "couldn't open %s/%s", b.opts.Name, normalizedName)
+		return nil, errors.Wrapf(err, "opening '%s/%s'", b.opts.Name, normalizedName)
 	}
 
 	out.GridFile = file
@@ -178,16 +182,16 @@ func (b *gridfsLegacyBucket) Put(ctx context.Context, name string, input io.Read
 	} else {
 		file, err = b.openFile(ctx, name, true)
 		if err != nil {
-			return errors.Wrap(err, "problem creating file")
+			return errors.Wrap(err, "creating file")
 		}
 	}
 
 	_, err = io.Copy(file, input)
 	if err != nil {
-		return errors.Wrap(err, "problem copying data")
+		return errors.Wrap(err, "copying data")
 	}
 
-	return errors.Wrap(file.Close(), "problem flushing data to file")
+	return errors.Wrap(file.Close(), "flushing data to file")
 }
 
 func (b *gridfsLegacyBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
@@ -215,7 +219,7 @@ func (b *gridfsLegacyBucket) Upload(ctx context.Context, name, path string) erro
 
 	f, err := os.Open(path)
 	if err != nil {
-		return errors.Wrapf(err, "problem opening file %s", name)
+		return errors.Wrapf(err, "opening file '%s'", name)
 	}
 	defer f.Close()
 
@@ -238,17 +242,17 @@ func (b *gridfsLegacyBucket) Download(ctx context.Context, name, path string) er
 	}
 
 	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return errors.Wrapf(err, "problem creating enclosing directory for '%s'", path)
+		return errors.Wrapf(err, "creating enclosing directory for file '%s'", path)
 	}
 
 	f, err := os.Create(path)
 	if err != nil {
-		return errors.Wrapf(err, "problem creating file '%s'", path)
+		return errors.Wrapf(err, "creating file '%s'", path)
 	}
 	_, err = io.Copy(f, reader)
 	if err != nil {
 		_ = f.Close()
-		return errors.Wrap(err, "problem copying data")
+		return errors.Wrap(err, "copying data")
 	}
 
 	return errors.WithStack(f.Close())
@@ -271,13 +275,13 @@ func (b *gridfsLegacyBucket) Push(ctx context.Context, opts SyncOptions) error {
 	if opts.Exclude != "" {
 		re, err = regexp.Compile(opts.Exclude)
 		if err != nil {
-			return errors.Wrap(err, "problem compiling exclude regex")
+			return errors.Wrap(err, "compiling exclude regex")
 		}
 	}
 
 	localPaths, err := walkLocalTree(ctx, opts.Local)
 	if err != nil {
-		return errors.Wrap(err, "problem finding local paths")
+		return errors.Wrap(err, "finding local paths")
 	}
 
 	gridfs := b.gridFS()
@@ -290,27 +294,27 @@ func (b *gridfsLegacyBucket) Push(ctx context.Context, opts SyncOptions) error {
 		file, err := gridfs.Open(b.normalizeKey(target))
 		if err == mgo.ErrNotFound {
 			if err = b.Upload(ctx, target, filepath.Join(opts.Local, path)); err != nil {
-				return errors.Wrapf(err, "problem uploading '%s' to '%s'", path, target)
+				return errors.Wrapf(err, "uploading file '%s' to '%s'", path, target)
 			}
 			continue
 		} else if err != nil {
-			return errors.Wrapf(err, "problem finding '%s'", target)
+			return errors.Wrapf(err, "finding file '%s'", target)
 		}
 
-		localmd5, err := md5sum(filepath.Join(opts.Local, path))
+		localmd5, err := utility.MD5SumFile(filepath.Join(opts.Local, path))
 		if err != nil {
-			return errors.Wrapf(err, "problem checksumming '%s'", path)
+			return errors.Wrapf(err, "checksumming file '%s'", path)
 		}
 
 		if file.MD5() != localmd5 {
 			if err = b.Upload(ctx, target, filepath.Join(opts.Local, path)); err != nil {
-				return errors.Wrapf(err, "problem uploading '%s' to '%s'", path, target)
+				return errors.Wrapf(err, "uploading file '%s' to '%s'", path, target)
 			}
 		}
 	}
 
 	if (b.opts.DeleteOnPush || b.opts.DeleteOnSync) && !b.opts.DryRun {
-		return errors.Wrap(deleteOnPush(ctx, localPaths, opts.Remote, b), "problem with delete on sync after push")
+		return errors.Wrap(deleteOnPush(ctx, localPaths, opts.Remote, b), "deleting on sync after push")
 	}
 	return nil
 }
@@ -331,7 +335,7 @@ func (b *gridfsLegacyBucket) Pull(ctx context.Context, opts SyncOptions) error {
 	if opts.Exclude != "" {
 		re, err = regexp.Compile(opts.Exclude)
 		if err != nil {
-			return errors.Wrap(err, "problem compiling exclude regex")
+			return errors.Wrap(err, "compiling exclude regex")
 		}
 	}
 
@@ -342,7 +346,7 @@ func (b *gridfsLegacyBucket) Pull(ctx context.Context, opts SyncOptions) error {
 
 	iterimpl, ok := iter.(*legacyGridFSIterator)
 	if !ok {
-		return errors.New("programmer error")
+		return errors.Errorf("programmer error: iterator should be a legacy GridFS iterator but is actually type %T", iter)
 	}
 
 	gridfs := b.gridFS()
@@ -358,7 +362,7 @@ func (b *gridfsLegacyBucket) Pull(ctx context.Context, opts SyncOptions) error {
 		fn := denormalizedName[len(opts.Remote)+1:]
 		name := filepath.Join(opts.Local, fn)
 		keys = append(keys, fn)
-		checksum, err = md5sum(name)
+		checksum, err = utility.MD5SumFile(name)
 		if os.IsNotExist(errors.Cause(err)) {
 			if err = b.Download(ctx, denormalizedName, name); err != nil {
 				return errors.WithStack(err)
@@ -378,11 +382,11 @@ func (b *gridfsLegacyBucket) Pull(ctx context.Context, opts SyncOptions) error {
 	}
 
 	if err = iterimpl.iter.Err(); err != nil {
-		return errors.Wrap(err, "problem iterating bucket")
+		return errors.Wrap(err, "iterating bucket")
 	}
 
 	if (b.opts.DeleteOnPull || b.opts.DeleteOnSync) && !b.opts.DryRun {
-		return errors.Wrap(deleteOnPull(ctx, keys, opts.Local), "problem with delete on sync after pull")
+		return errors.Wrap(deleteOnPull(ctx, keys, opts.Local), "deleting on sync after pull")
 	}
 	return nil
 }
@@ -399,16 +403,16 @@ func (b *gridfsLegacyBucket) Copy(ctx context.Context, options CopyOptions) erro
 
 	from, err := b.Reader(ctx, options.SourceKey)
 	if err != nil {
-		return errors.Wrap(err, "problem getting reader for source")
+		return errors.Wrap(err, "getting reader for source")
 	}
 
 	to, err := options.DestinationBucket.Writer(ctx, options.DestinationKey)
 	if err != nil {
-		return errors.Wrap(err, "problem getting writer for destination")
+		return errors.Wrap(err, "getting writer for destination")
 	}
 
 	if _, err = io.Copy(to, from); err != nil {
-		return errors.Wrap(err, "problem copying data")
+		return errors.Wrap(err, "copying data")
 	}
 
 	return errors.WithStack(to.Close())
@@ -427,7 +431,12 @@ func (b *gridfsLegacyBucket) Remove(ctx context.Context, key string) error {
 	if b.opts.DryRun {
 		return nil
 	}
-	return errors.Wrapf(b.gridFS().Remove(b.normalizeKey(key)), "problem removing file %s", key)
+
+	err := b.gridFS().Remove(b.normalizeKey(key))
+	if err == mgo.ErrNotFound {
+		err = MakeKeyNotFoundError(err)
+	}
+	return errors.Wrapf(err, "removing file '%s'", key)
 }
 
 func (b *gridfsLegacyBucket) RemoveMany(ctx context.Context, keys ...string) error {

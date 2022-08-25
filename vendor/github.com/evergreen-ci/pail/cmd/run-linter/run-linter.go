@@ -7,11 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
-
-	"github.com/mongodb/grip"
 )
 
 type result struct {
@@ -60,14 +57,10 @@ func main() {
 		packages          []string
 		results           []*result
 		hasFailingTest    bool
-
-		gopath = os.Getenv("GOPATH")
 	)
 
-	gopath, _ = filepath.Abs(gopath)
-
 	flag.StringVar(&lintArgs, "lintArgs", "", "args to pass to golangci-lint")
-	flag.StringVar(&lintBin, "lintBin", filepath.Join(gopath, "bin", "golangci-lint"), "path to golangci-lint")
+	flag.StringVar(&lintBin, "lintBin", "", "path to golangci-lint")
 	flag.StringVar(&packageList, "packages", "", "list of space separated packages")
 	flag.StringVar(&customLintersFlag, "customLinters", "", "list of comma-separated custom linter commands")
 	flag.StringVar(&output, "output", "", "output file for to write results.")
@@ -79,18 +72,21 @@ func main() {
 	packages = strings.Split(strings.Replace(packageList, "-", "/", -1), " ")
 	dirname, _ := os.Getwd()
 	cwd := filepath.Base(dirname)
-	lintArgs += fmt.Sprintf(" --concurrency=%d", runtime.NumCPU()/2)
 
 	for _, pkg := range packages {
 		pkgDir := "./"
 		if cwd != pkg {
 			pkgDir += pkg
 		}
-		args := []string{lintBin, "run", lintArgs, pkgDir}
+		splitLintArgs := strings.Split(lintArgs, " ")
+		args := []string{lintBin, "run"}
+		args = append(args, splitLintArgs...)
+		args = append(args, pkgDir)
 
 		startAt := time.Now()
-		cmd := strings.Join(args, " ")
-		out, err := exec.Command("sh", "-c", cmd).CombinedOutput()
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dirname
+		out, err := cmd.CombinedOutput()
 		r := &result{
 			cmd:      strings.Join(args, " "),
 			name:     "lint-" + strings.Replace(pkg, "/", "-", -1),
@@ -98,9 +94,14 @@ func main() {
 			duration: time.Since(startAt),
 			output:   strings.Split(string(out), "\n"),
 		}
+
 		for _, linter := range customLinters {
 			customLinterStart := time.Now()
-			out, err = exec.Command("sh", "-c", fmt.Sprintf("%s %s", linter, pkgDir)).CombinedOutput()
+			linterArgs := strings.Split(linter, " ")
+			linterArgs = append(linterArgs, pkgDir)
+			cmd := exec.Command(linterArgs[0], linterArgs[1:]...)
+			cmd.Dir = dirname
+			out, err := cmd.CombinedOutput()
 			r.passed = r.passed && err == nil
 			r.duration += time.Since(customLinterStart)
 			r.output = append(r.output, strings.Split(string(out), "\n")...)
@@ -128,7 +129,7 @@ func main() {
 
 		for _, r := range results {
 			if _, err = f.WriteString(r.String() + "\n"); err != nil {
-				grip.Error(err)
+				fmt.Fprintf(os.Stderr, "%s", err)
 				os.Exit(1)
 			}
 		}

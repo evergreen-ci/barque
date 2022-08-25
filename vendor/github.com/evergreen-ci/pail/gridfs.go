@@ -85,7 +85,7 @@ func NewGridFSBucket(ctx context.Context, opts GridFSOptions) (Bucket, error) {
 
 	client, err := mongo.NewClient(options.Client().ApplyURI(opts.MongoDBURI))
 	if err != nil {
-		return nil, errors.Wrap(err, "problem constructing client")
+		return nil, errors.Wrap(err, "constructing client")
 	}
 
 	connctx, cancel := context.WithTimeout(ctx, time.Second)
@@ -93,7 +93,7 @@ func NewGridFSBucket(ctx context.Context, opts GridFSOptions) (Bucket, error) {
 
 	err = client.Connect(connctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "problem connecting")
+		return nil, errors.Wrap(err, "connecting")
 	}
 
 	return &gridfsBucket{opts: opts, client: client}, nil
@@ -104,12 +104,12 @@ func (b *gridfsBucket) Check(ctx context.Context) error {
 		return errors.New("no client defined")
 	}
 
-	return errors.Wrap(b.client.Ping(ctx, nil), "problem contacting mongodb")
+	return errors.Wrap(b.client.Ping(ctx, nil), "contacting DB")
 }
 
 func (b *gridfsBucket) bucket(ctx context.Context) (*gridfs.Bucket, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, errors.Wrap(err, "cannot fetch bucket with canceled context")
+		return nil, errors.Wrap(err, "fetching bucket with canceled context")
 	}
 
 	gfs, err := gridfs.NewBucket(b.client.Database(b.opts.Database), options.GridFSBucket().SetName(b.opts.Name))
@@ -138,7 +138,7 @@ func (b *gridfsBucket) Writer(ctx context.Context, name string) (io.WriteCloser,
 
 	grid, err := b.bucket(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "problem resolving bucket")
+		return nil, errors.Wrap(err, "resolving bucket")
 	}
 
 	if b.opts.DryRun {
@@ -147,7 +147,7 @@ func (b *gridfsBucket) Writer(ctx context.Context, name string) (io.WriteCloser,
 
 	writer, err := grid.OpenUploadStream(b.normalizeKey(name))
 	if err != nil {
-		return nil, errors.Wrap(err, "problem opening stream")
+		return nil, errors.Wrap(err, "opening stream")
 	}
 
 	return writer, nil
@@ -164,12 +164,15 @@ func (b *gridfsBucket) Reader(ctx context.Context, name string) (io.ReadCloser, 
 
 	grid, err := b.bucket(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "problem resolving bucket")
+		return nil, errors.Wrap(err, "resolving bucket")
 	}
 
 	reader, err := grid.OpenDownloadStreamByName(b.normalizeKey(name))
 	if err != nil {
-		return nil, errors.Wrap(err, "problem opening stream")
+		if err == gridfs.ErrFileNotFound {
+			err = MakeKeyNotFoundError(err)
+		}
+		return nil, errors.Wrap(err, "opening stream")
 	}
 
 	return reader, nil
@@ -187,7 +190,7 @@ func (b *gridfsBucket) Put(ctx context.Context, name string, input io.Reader) er
 
 	grid, err := b.bucket(ctx)
 	if err != nil {
-		return errors.Wrap(err, "problem resolving bucket")
+		return errors.Wrap(err, "resolving bucket")
 	}
 
 	if b.opts.DryRun {
@@ -195,7 +198,7 @@ func (b *gridfsBucket) Put(ctx context.Context, name string, input io.Reader) er
 	}
 
 	if _, err = grid.UploadFromStream(b.normalizeKey(name), input); err != nil {
-		return errors.Wrap(err, "problem uploading file")
+		return errors.Wrap(err, "uploading file")
 	}
 
 	return nil
@@ -226,7 +229,7 @@ func (b *gridfsBucket) Upload(ctx context.Context, name, path string) error {
 
 	f, err := os.Open(path)
 	if err != nil {
-		return errors.Wrapf(err, "problem opening file %s", name)
+		return errors.Wrapf(err, "opening file '%s'", name)
 	}
 	defer f.Close()
 
@@ -249,17 +252,17 @@ func (b *gridfsBucket) Download(ctx context.Context, name, path string) error {
 	}
 
 	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return errors.Wrapf(err, "problem creating enclosing directory for '%s'", path)
+		return errors.Wrapf(err, "creating enclosing directory for file '%s'", path)
 	}
 
 	f, err := os.Create(path)
 	if err != nil {
-		return errors.Wrapf(err, "problem creating file '%s'", path)
+		return errors.Wrapf(err, "creating file '%s'", path)
 	}
 	_, err = io.Copy(f, reader)
 	if err != nil {
 		_ = f.Close()
-		return errors.Wrap(err, "problem copying data")
+		return errors.Wrap(err, "copying data")
 	}
 
 	return errors.WithStack(f.Close())
@@ -282,13 +285,13 @@ func (b *gridfsBucket) Push(ctx context.Context, opts SyncOptions) error {
 	if opts.Exclude != "" {
 		re, err = regexp.Compile(opts.Exclude)
 		if err != nil {
-			return errors.Wrap(err, "problem compiling exclude regex")
+			return errors.Wrap(err, "compiling exclude regex")
 		}
 	}
 
 	localPaths, err := walkLocalTree(ctx, opts.Local)
 	if err != nil {
-		return errors.Wrap(err, "problem finding local paths")
+		return errors.Wrap(err, "finding local paths")
 	}
 
 	for _, path := range localPaths {
@@ -299,12 +302,12 @@ func (b *gridfsBucket) Push(ctx context.Context, opts SyncOptions) error {
 		target := consistentJoin(opts.Remote, path)
 		_ = b.Remove(ctx, target)
 		if err = b.Upload(ctx, target, filepath.Join(opts.Local, path)); err != nil {
-			return errors.Wrapf(err, "problem uploading '%s' to '%s'", path, target)
+			return errors.Wrapf(err, "uploading file '%s' to '%s'", path, target)
 		}
 	}
 
 	if (b.opts.DeleteOnPush || b.opts.DeleteOnSync) && !b.opts.DryRun {
-		return errors.Wrap(deleteOnPush(ctx, localPaths, opts.Remote, b), "problem with delete on sync after push")
+		return errors.Wrap(deleteOnPush(ctx, localPaths, opts.Remote, b), "deleting on sync after push")
 	}
 
 	return nil
@@ -326,7 +329,7 @@ func (b *gridfsBucket) Pull(ctx context.Context, opts SyncOptions) error {
 	if opts.Exclude != "" {
 		re, err = regexp.Compile(opts.Exclude)
 		if err != nil {
-			return errors.Wrap(err, "problem compiling exclude regex")
+			return errors.Wrap(err, "compiling exclude regex")
 		}
 	}
 
@@ -357,7 +360,7 @@ func (b *gridfsBucket) Pull(ctx context.Context, opts SyncOptions) error {
 	}
 
 	if (b.opts.DeleteOnPull || b.opts.DeleteOnSync) && !b.opts.DryRun {
-		return errors.Wrap(deleteOnPull(ctx, keys, opts.Local), "problem with delete on sync after pull")
+		return errors.Wrap(deleteOnPull(ctx, keys, opts.Local), "deleting on sync after pull")
 	}
 
 	return nil
@@ -375,16 +378,16 @@ func (b *gridfsBucket) Copy(ctx context.Context, opts CopyOptions) error {
 
 	from, err := b.Reader(ctx, opts.SourceKey)
 	if err != nil {
-		return errors.Wrap(err, "problem getting reader for source")
+		return errors.Wrap(err, "getting reader for source")
 	}
 
 	to, err := opts.DestinationBucket.Writer(ctx, opts.DestinationKey)
 	if err != nil {
-		return errors.Wrap(err, "problem getting writer for destination")
+		return errors.Wrap(err, "getting writer for destination")
 	}
 
 	if _, err = io.Copy(to, from); err != nil {
-		return errors.Wrap(err, "problem copying data")
+		return errors.Wrap(err, "copying data")
 	}
 
 	return errors.WithStack(to.Close())
@@ -402,14 +405,14 @@ func (b *gridfsBucket) Remove(ctx context.Context, key string) error {
 
 	grid, err := b.bucket(ctx)
 	if err != nil {
-		return errors.Wrap(err, "problem resolving bucket")
+		return errors.Wrap(err, "resolving bucket")
 	}
 
 	cursor, err := grid.Find(bson.M{"filename": b.normalizeKey(key)})
 	if err == mongo.ErrNoDocuments {
 		return nil
 	} else if err != nil {
-		return errors.Wrap(err, "problem finding file")
+		return errors.Wrap(err, "finding file")
 	}
 
 	document := struct {
@@ -424,7 +427,7 @@ func (b *gridfsBucket) Remove(ctx context.Context, key string) error {
 
 		if err != nil {
 			_ = cursor.Close(ctx)
-			return errors.Wrap(err, "problem decoding gridfs metadata")
+			return errors.Wrap(err, "decoding GridFS metadata")
 		}
 
 		if b.opts.DryRun {
@@ -432,14 +435,14 @@ func (b *gridfsBucket) Remove(ctx context.Context, key string) error {
 		}
 
 		if err = grid.Delete(document.ID); err != nil {
-			return errors.Wrap(err, "problem deleting gridfs file")
+			return errors.Wrap(err, "deleting GridFS file")
 		}
 	}
 	if err = cursor.Err(); err != nil {
-		return errors.Wrap(err, "problem iterating gridfs metadata")
+		return errors.Wrap(err, "iterating GridFS metadata")
 	}
 	if err = cursor.Close(ctx); err != nil {
-		return errors.Wrap(err, "problem closing ")
+		return errors.Wrap(err, "closing cursor")
 	}
 
 	return nil
@@ -457,7 +460,7 @@ func (b *gridfsBucket) RemoveMany(ctx context.Context, keys ...string) error {
 
 	grid, err := b.bucket(ctx)
 	if err != nil {
-		return errors.Wrap(err, "problem resolving bucket")
+		return errors.Wrap(err, "resolving bucket")
 	}
 
 	normalizedKeys := make([]string, len(keys))
@@ -467,7 +470,7 @@ func (b *gridfsBucket) RemoveMany(ctx context.Context, keys ...string) error {
 
 	cursor, err := grid.Find(bson.M{"filename": bson.M{"$in": normalizedKeys}})
 	if err != nil {
-		return errors.Wrap(err, "problem finding file")
+		return errors.Wrap(err, "finding file")
 	}
 
 	document := struct {
@@ -481,7 +484,7 @@ func (b *gridfsBucket) RemoveMany(ctx context.Context, keys ...string) error {
 		}
 
 		if err != nil {
-			return errors.Wrap(err, "problem decoding gridfs metadata")
+			return errors.Wrap(err, "decoding GridFS metadata")
 		}
 
 		if b.opts.DryRun {
@@ -489,16 +492,16 @@ func (b *gridfsBucket) RemoveMany(ctx context.Context, keys ...string) error {
 		}
 
 		if err = grid.Delete(document.ID); err != nil {
-			return errors.Wrap(err, "problem deleting gridfs file")
+			return errors.Wrap(err, "deleting GridFS file")
 		}
 	}
 
 	if err = cursor.Err(); err != nil {
-		return errors.Wrap(err, "problem iterating gridfs metadata")
+		return errors.Wrap(err, "iterating GridFS metadata")
 	}
 
 	if err = cursor.Close(ctx); err != nil {
-		return errors.Wrap(err, "problem closing cursor")
+		return errors.Wrap(err, "closing cursor")
 	}
 
 	return nil
@@ -546,12 +549,12 @@ func (b *gridfsBucket) List(ctx context.Context, prefix string) (BucketIterator,
 
 	grid, err := b.bucket(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "problem resolving bucket")
+		return nil, errors.Wrap(err, "resolving bucket")
 	}
 
 	cursor, err := grid.Find(filter)
 	if err != nil {
-		return nil, errors.Wrap(err, "problem finding file")
+		return nil, errors.Wrap(err, "finding file")
 	}
 
 	return &gridfsIterator{bucket: b, iter: cursor}, nil
