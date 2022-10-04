@@ -634,14 +634,17 @@ func (j *repoBuilderJob) Run(ctx context.Context) {
 			"bucket":    j.Distro.Bucket,
 		})
 
+		// example: /tmp/{hash}/repo.mongodb.com/apt/ubuntu/dists/bionic/mongodb-enterprise
 		local := filepath.Join(j.Conf.WorkSpace, j.Distro.Bucket, remote)
 
+		pkgLocation := j.getPackageLocation()
 		var err error
 
-		if err = os.MkdirAll(local, 0755); err != nil {
-			j.AddError(errors.Wrapf(err, "problem creating directory %s", local))
+		if err = os.MkdirAll(filepath.Join(local, pkgLocation), 0755); err != nil {
+			j.AddError(errors.Wrapf(err, "problem creating directory %s", filepath.Join(local, pkgLocation)))
 			return
 		}
+
 		grip.Debug(message.Fields{
 			"message":   "downloading package",
 			"job_id":    j.ID(),
@@ -652,11 +655,24 @@ func (j *repoBuilderJob) Run(ctx context.Context) {
 			"local":     local,
 		})
 
-		pkgLocation := j.getPackageLocation()
-		syncOpts := pail.SyncOptions{
-			Local:  filepath.Join(local, pkgLocation),
-			Remote: filepath.Join(remote, pkgLocation),
+		var repo string
+		switch j.Distro.Type {
+		case DEB:
+			// example: 6.0/multiverse
+			repo = filepath.Join(pkgLocation, j.Distro.Component)
+		case RPM:
+			// example: 6.0/x86_64
+			repo = filepath.Join(pkgLocation, j.Arch)
+		default:
+			j.AddError(errors.Errorf("repobuilder does not support uploading '%s' repos", j.Distro.Type))
+			return
 		}
+
+		syncOpts := pail.SyncOptions{
+			Local:  filepath.Join(local, repo),
+			Remote: filepath.Join(remote, repo),
+		}
+
 		if err = bucket.Pull(ctx, syncOpts); err != nil {
 			j.AddError(errors.Wrapf(err, "problem syncing from %s to %s", remote, local))
 			return
